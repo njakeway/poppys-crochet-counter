@@ -20,34 +20,42 @@
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
     --bg:#14162B; --surface:#1E2140; --ink:#EEF0FF; --muted:#9A9FC8;
-    --stitch:#F0B429; --stitch-ink:#2B2100; --row:#6C74E0; --row-ink:#10122A; --done:#4CC38A; --line:#31356A;
+    --row:#6C74E0; --row-ink:#10122A; --done:#4CC38A; --line:#31356A;
     color-scheme:dark;
   }
 }
 :root[data-theme="dark"]{
   --bg:#14162B; --surface:#1E2140; --ink:#EEF0FF; --muted:#9A9FC8;
-  --stitch:#F0B429; --stitch-ink:#2B2100; --row:#6C74E0; --row-ink:#10122A; --done:#4CC38A; --line:#31356A;
+  --row:#6C74E0; --row-ink:#10122A; --done:#4CC38A; --line:#31356A;
   color-scheme:dark;
 }
 *,*::before,*::after{box-sizing:inherit}
 html,body{height:100%;margin:0}
 body{background:var(--bg);color:var(--ink);font-family:ui-rounded,"SF Pro Rounded",system-ui,-apple-system,"Segoe UI",sans-serif;
   -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
-.app{height:100%;display:flex;flex-direction:column;gap:12px;padding:14px;max-width:560px;margin:0 auto}
-input{font:inherit;color:inherit}
+.app{height:100%;display:flex;flex-direction:column;gap:10px;padding:14px;max-width:560px;margin:0 auto}
+input,textarea,button{font:inherit;color:inherit}
+.top{display:flex;gap:10px;align-items:center}
 .name{background:transparent;border:0;border-bottom:2px solid var(--line);font-size:1.15rem;font-weight:600;padding:6px 2px;width:100%;-webkit-user-select:text;user-select:text;border-radius:0}
 .name:focus{outline:none;border-color:var(--row)}
-button{font:inherit;border:0;cursor:pointer;color:inherit}
-button:focus-visible,.name:focus-visible,.target input:focus-visible{outline:3px solid var(--row);outline-offset:2px}
-.rows{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--surface);border-radius:20px;padding:12px 14px 12px 20px}
+button{border:0;cursor:pointer}
+button:focus-visible,.name:focus-visible,.target input:focus-visible,textarea:focus-visible{outline:3px solid var(--row);outline-offset:2px}
+.menu{background:var(--surface);border-radius:12px;padding:10px 14px;font-weight:700;font-size:.9rem;white-space:nowrap}
+.rows{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--surface);border-radius:20px;padding:10px 14px 10px 20px}
 .label{font-size:.9rem;color:var(--muted);font-weight:600}
-.rownum{font-size:3rem;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
+.rownum{font-size:2.8rem;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
 .next{background:var(--row);color:var(--row-ink);font-weight:700;font-size:1.05rem;padding:16px 18px;border-radius:16px;min-width:128px}
 .next:active{transform:scale(.97)}
+.now{background:var(--surface);border-radius:16px;border-left:6px solid var(--stitch);padding:10px 14px}
+.now[hidden]{display:none}
+.nowhead{font-size:.85rem;color:var(--muted);font-weight:600}
+.nowpre{font-size:.95rem;color:var(--muted);font-weight:600;margin-top:2px}
+.nowmain{font-size:1.3rem;font-weight:800;margin-top:2px}
+.nowthen{font-size:.9rem;color:var(--muted);margin-top:4px}
 .stitch{flex:1;min-height:0;background:var(--stitch);color:var(--stitch-ink);border-radius:28px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;transition:background .15s,color .15s}
 .stitch:active{transform:scale(.985)}
-.stitch .big{font-size:min(30vw,9.5rem);font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
-.stitch .sub{font-size:1rem;font-weight:700;opacity:.8}
+.stitch .big{font-size:min(28vw,9rem);font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
+.stitch .sub{font-size:1rem;font-weight:700;opacity:.8;text-align:center;padding:0 12px}
 .stitch.done{background:var(--done);color:#fff}
 .bar{display:grid;grid-template-columns:1fr 1fr 1.3fr;gap:10px}
 .small{background:var(--surface);border-radius:16px;padding:14px 8px;font-weight:700;font-size:1rem}
@@ -56,22 +64,46 @@ button:focus-visible,.name:focus-visible,.target input:focus-visible{outline:3px
 .target{display:flex;align-items:center;justify-content:center;gap:8px;background:var(--surface);border-radius:16px;padding:6px 10px}
 .target span{font-size:.85rem;color:var(--muted);font-weight:600;line-height:1.1}
 .target input{width:52px;text-align:center;font-size:1.2rem;font-weight:700;background:var(--bg);border:0;border-radius:10px;padding:8px 0;-webkit-user-select:text;user-select:text}
+.target input:disabled{opacity:.7}
 .foot{display:flex;justify-content:space-between;align-items:center}
 .reset{background:transparent;color:var(--muted);font-size:.9rem;font-weight:600;padding:6px 2px;text-decoration:underline}
 .reset.armed{color:#D6455D;text-decoration:none}
 .wake{font-size:.8rem;color:var(--muted)}
+.panel{position:fixed;inset:0;background:var(--bg);overflow-y:auto;z-index:20;
+  padding:calc(env(safe-area-inset-top,0px) + 14px) 14px calc(env(safe-area-inset-bottom,0px) + 24px)}
+.panel[hidden]{display:none}
+.panel .inner{max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:10px}
+.panel h2{margin:12px 0 0;font-size:1.2rem}
+.panel p{margin:0;color:var(--muted);font-size:.9rem;line-height:1.4}
+textarea{width:100%;min-height:150px;background:var(--surface);border:2px solid var(--line);border-radius:14px;padding:10px;font-size:.95rem;resize:vertical;-webkit-user-select:text;user-select:text}
+textarea.short{min-height:90px}
+.btns{display:flex;gap:10px;flex-wrap:wrap}
+.btn{background:var(--row);color:var(--row-ink);border-radius:12px;padding:12px 16px;font-weight:700}
+.btn.alt{background:var(--surface);color:var(--ink)}
+.status{font-size:.9rem;font-weight:600}
+.check{display:flex;gap:10px;align-items:center;font-size:.95rem;font-weight:600}
+.check input{width:22px;height:22px}
+.rowlist{background:var(--surface);border-radius:14px;padding:8px 12px;max-height:180px;overflow-y:auto;font-size:.9rem;line-height:1.6}
 @media (prefers-reduced-motion: reduce){*{transition:none!important}}
 </style>
 </head>
 <body>
 <div class="app">
-  <input class="name" id="name" type="text" placeholder="Project name" maxlength="60" aria-label="Project name">
+  <div class="top">
+    <input class="name" id="name" type="text" placeholder="Project name" maxlength="60" aria-label="Project name">
+    <button class="menu" id="openPanel">Pattern</button>
+  </div>
   <div class="rows">
     <div>
       <div class="label">Row</div>
       <div class="rownum" id="rows" aria-live="polite">1</div>
     </div>
     <button class="next" id="next">Next row</button>
+  </div>
+  <div class="now" id="now" hidden>
+    <div class="nowhead" id="nowhead"></div>
+    <div id="nowbody"></div>
+    <div class="nowthen" id="nowthen"></div>
   </div>
   <button class="stitch" id="stitch" aria-label="Add a stitch">
     <span class="big" id="stitches">0</span>
@@ -80,17 +112,39 @@ button:focus-visible,.name:focus-visible,.target input:focus-visible{outline:3px
   <div class="bar">
     <button class="small" id="minus" aria-label="Remove a stitch">− Stitch</button>
     <button class="small" id="undo">Undo</button>
-    <label class="target"><span>Stitches<br>per row</span><input id="target" type="number" inputmode="numeric" min="0" max="999" placeholder="–"></label>
+    <label class="target"><span id="targetLabel">Stitches<br>per row</span><input id="target" type="number" inputmode="numeric" min="0" max="999" placeholder="–"></label>
   </div>
   <div class="foot">
     <button class="reset" id="reset">Start over</button>
     <span class="wake" id="wake"></span>
   </div>
 </div>
+
+<div class="panel" id="panel" hidden>
+  <div class="inner">
+    <div class="btns"><button class="btn" id="closePanel">Done</button></div>
+    <h2>Pattern</h2>
+    <p>Paste your pattern with its row headings, such as “Row 3” or “3rd Row”. The app will show what to do next based on your row and stitch counts.</p>
+    <textarea id="pattern" placeholder="Paste your pattern here"></textarea>
+    <label class="check"><input type="checkbox" id="countCh"> Count chains as stitches</label>
+    <div class="status" id="patStatus"></div>
+    <div class="rowlist" id="rowlist" hidden></div>
+    <h2>Backup</h2>
+    <p>Copy your backup into a note or message. Paste it here later to get your project back.</p>
+    <div class="btns">
+      <button class="btn" id="copyBackup">Copy backup</button>
+      <button class="btn alt" id="shareBackup" hidden>Share…</button>
+    </div>
+    <textarea class="short" id="backup" placeholder="Your backup appears here. To restore, paste a backup here and tap Restore."></textarea>
+    <div class="btns"><button class="btn alt" id="restore">Restore from backup</button></div>
+    <div class="status" id="backupStatus"></div>
+  </div>
+</div>
+
 <script>
 (function(){
   var KEY = "crochet-counter-v1";
-  var s = { name:"", stitches:0, rows:1, target:0, history:[] };
+  var s = { name:"", stitches:0, rows:1, target:0, history:[], pattern:"", countCh:false };
   var $ = function(id){ return document.getElementById(id); };
 
   try {
@@ -102,17 +156,101 @@ button:focus-visible,.name:focus-visible,.target input:focus-visible{outline:3px
   function save(){ try { localStorage.setItem(KEY, JSON.stringify(s)); } catch(e) {} }
   function snap(){ s.history.push({ stitches:s.stitches, rows:s.rows }); if (s.history.length > 100) s.history.shift(); }
 
+  // PARSE-START
+  function splitTop(str){
+    var out = [], depth = 0, cur = "";
+    for (var i = 0; i < str.length; i++) {
+      var c = str[i];
+      if (c === "(") depth++;
+      if (c === ")" && depth > 0) depth--;
+      if ((c === "," || c === ";" || c === "\n") && depth === 0) { out.push(cur); cur = ""; }
+      else cur += c;
+    }
+    out.push(cur);
+    return out.map(function(x){ return x.replace(/\s+/g, " ").trim(); }).filter(Boolean);
+  }
+  function countStitches(text){
+    var re = /(^|[^A-Za-z])(\d*)\s*(sl\s*st|htr|dtr|tr|dc|sc|ch)(?![A-Za-z])/gi, m, st = 0, ch = 0;
+    while ((m = re.exec(text)) !== null) {
+      var n = m[2] ? parseInt(m[2], 10) : 1;
+      if (m[3].toLowerCase() === "ch") ch += n; else st += n;
+    }
+    return { st: st, ch: ch };
+  }
+  function parsePattern(text){
+    var re = /(?:\bRow\s*(\d+)|\b(\d+)\s*(?:st|nd|rd|th)\s*Row)\b\s*[.:)\-]?/gi, hits = [], m;
+    while ((m = re.exec(text)) !== null) hits.push({ i: m.index, e: re.lastIndex, n: parseInt(m[1] || m[2], 10) });
+    var rows = {}, order = [];
+    hits.forEach(function(h, idx){
+      var body = text.slice(h.e, idx + 1 < hits.length ? hits[idx + 1].i : text.length);
+      var side = "";
+      var sm = body.match(/^\s*\((rs|ws)\)\s*[.:\-]?/i);
+      if (sm) { side = sm[1].toUpperCase(); body = body.slice(sm[0].length); }
+      body = body.replace(/[.\s]+$/, "");
+      var segs = splitTop(body).map(function(t){ var c = countStitches(t); return { text: t, st: c.st, ch: c.ch }; });
+      if (!(h.n in rows)) order.push(h.n);
+      rows[h.n] = { n: h.n, side: side, segs: segs };
+    });
+    return { rows: rows, order: order };
+  }
+  function segCount(seg, countCh){ return seg.st + (countCh ? seg.ch : 0); }
+  function rowTotal(row, countCh){ return row.segs.reduce(function(a, g){ return a + segCount(g, countCh); }, 0); }
+  function whereAmI(row, done, countCh){
+    var cum = 0, pending = [];
+    for (var i = 0; i < row.segs.length; i++) {
+      var g = row.segs[i], c = segCount(g, countCh);
+      if (c === 0) { pending.push(g.text); continue; }
+      if (cum + c > done) {
+        return { finished: false, pending: done === cum ? pending : [], cur: g.text, offset: done - cum, size: c,
+                 then: i + 1 < row.segs.length ? row.segs[i + 1].text : "" };
+      }
+      cum += c; pending = [];
+    }
+    return { finished: true, pending: pending };
+  }
+  // PARSE-END
+
+  var parsed = parsePattern(s.pattern);
+
+  function currentRow(){ return parsed.rows[s.rows] || null; }
+
+  function renderNow(){
+    var box = $("now");
+    if (!s.pattern.trim() || !parsed.order.length) { box.hidden = true; return; }
+    box.hidden = false;
+    var body = $("nowbody");
+    while (body.firstChild) body.removeChild(body.firstChild);
+    var row = currentRow();
+    if (!row) { $("nowhead").textContent = "Row " + s.rows; add(body, "nowmain", "No instructions found for this row"); $("nowthen").textContent = ""; return; }
+    $("nowhead").textContent = "Row " + row.n + (row.side ? " (" + row.side + ")" : "");
+    var w = whereAmI(row, s.stitches, s.countCh);
+    if (w.finished) {
+      add(body, "nowmain", "Row complete");
+      $("nowthen").textContent = w.pending.length ? "Then: " + w.pending.join(", ") : "Tap Next row";
+      return;
+    }
+    w.pending.forEach(function(t){ add(body, "nowpre", t); });
+    add(body, "nowmain", w.cur);
+    $("nowthen").textContent = (w.size > 1 ? "Stitch " + (w.offset + 1) + " of " + w.size + " in this step. " : "") + (w.then ? "Then: " + w.then : "");
+  }
+  function add(parent, cls, text){ var d = document.createElement("div"); d.className = cls; d.textContent = text; parent.appendChild(d); }
+
   function render(){
     $("name").value = s.name;
     $("rows").textContent = s.rows;
     $("stitches").textContent = s.stitches;
-    $("target").value = s.target > 0 ? s.target : "";
-    var done = s.target > 0 && s.stitches >= s.target;
+    var row = currentRow(), patTotal = row ? rowTotal(row, s.countCh) : 0;
+    var target = patTotal > 0 ? patTotal : s.target;
+    var ti = $("target");
+    if (patTotal > 0) { ti.value = patTotal; ti.disabled = true; $("targetLabel").innerHTML = "From<br>pattern"; }
+    else { ti.disabled = false; ti.value = s.target > 0 ? s.target : ""; $("targetLabel").innerHTML = "Stitches<br>per row"; }
+    var done = target > 0 && s.stitches >= target;
     $("stitch").classList.toggle("done", done);
     $("sub").textContent = done ? "Row complete – tap Next row" :
-      (s.target > 0 ? "of " + s.target + " – tap to add a stitch" : "Tap to add a stitch");
+      (target > 0 ? "of " + target + " – tap to add a stitch" : "Tap to add a stitch");
     $("undo").disabled = s.history.length === 0;
     $("minus").disabled = s.stitches === 0;
+    renderNow();
     save();
   }
 
@@ -127,8 +265,7 @@ button:focus-visible,.name:focus-visible,.target input:focus-visible{outline:3px
   $("target").addEventListener("input", function(e){
     var v = parseInt(e.target.value, 10);
     s.target = isNaN(v) || v < 0 ? 0 : v;
-    var done = s.target > 0 && s.stitches >= s.target;
-    $("stitch").classList.toggle("done", done);
+    $("stitch").classList.toggle("done", s.target > 0 && s.stitches >= s.target);
     save();
   });
   $("target").addEventListener("change", render);
@@ -146,13 +283,67 @@ button:focus-visible,.name:focus-visible,.target input:focus-visible{outline:3px
     }
   });
 
+  // Pattern and backup panel
+  function renderPatternStatus(){
+    var st = $("patStatus"), list = $("rowlist");
+    while (list.firstChild) list.removeChild(list.firstChild);
+    if (!s.pattern.trim()) { st.textContent = ""; list.hidden = true; return; }
+    if (!parsed.order.length) { st.textContent = "No rows found. Start each row with “Row 1” or “1st Row”."; list.hidden = true; return; }
+    st.textContent = "Found " + parsed.order.length + " row" + (parsed.order.length === 1 ? "" : "s") + ". Check the stitch totals look right:";
+    list.hidden = false;
+    parsed.order.slice().sort(function(a, b){ return a - b; }).forEach(function(n){
+      add(list, "", "Row " + n + ": " + rowTotal(parsed.rows[n], s.countCh) + " stitches");
+    });
+  }
+  $("openPanel").addEventListener("click", function(){
+    $("pattern").value = s.pattern; $("countCh").checked = !!s.countCh;
+    renderPatternStatus(); $("panel").hidden = false; $("panel").scrollTop = 0;
+  });
+  $("closePanel").addEventListener("click", function(){ $("panel").hidden = true; render(); });
+  $("pattern").addEventListener("input", function(e){
+    s.pattern = e.target.value; parsed = parsePattern(s.pattern); renderPatternStatus(); save();
+  });
+  $("countCh").addEventListener("change", function(e){ s.countCh = e.target.checked; renderPatternStatus(); save(); });
+
+  function backupText(){
+    return JSON.stringify({ v:1, name:s.name, stitches:s.stitches, rows:s.rows, target:s.target, countCh:s.countCh, pattern:s.pattern });
+  }
+  function msg(t){ $("backupStatus").textContent = t; }
+  $("copyBackup").addEventListener("click", function(){
+    var ta = $("backup"); ta.value = backupText(); ta.focus(); ta.select();
+    var ok = false;
+    try { ok = document.execCommand("copy"); } catch(e) {}
+    if (!ok) {
+      try { navigator.clipboard.writeText(ta.value).then(function(){ msg("Backup copied."); }, function(){ msg("Select the text above and copy it."); }); return; } catch(e) {}
+    }
+    msg(ok ? "Backup copied." : "Select the text above and copy it.");
+  });
+  if (navigator.share) {
+    $("shareBackup").hidden = false;
+    $("shareBackup").addEventListener("click", function(){
+      var t = backupText(); $("backup").value = t;
+      navigator.share({ text: t }).catch(function(){});
+    });
+  }
+  $("restore").addEventListener("click", function(){
+    try {
+      var d = JSON.parse($("backup").value.trim());
+      if (!d || typeof d !== "object" || d.v !== 1) throw new Error("bad");
+      s.name = String(d.name || ""); s.stitches = Math.max(0, parseInt(d.stitches, 10) || 0);
+      s.rows = Math.max(1, parseInt(d.rows, 10) || 1); s.target = Math.max(0, parseInt(d.target, 10) || 0);
+      s.countCh = !!d.countCh; s.pattern = String(d.pattern || ""); s.history = [];
+      parsed = parsePattern(s.pattern);
+      $("pattern").value = s.pattern; $("countCh").checked = s.countCh;
+      renderPatternStatus(); render(); msg("Restored. You are on row " + s.rows + ", stitch " + s.stitches + ".");
+    } catch(e) { msg("That doesn’t look like a backup. Paste the whole backup text and try again."); }
+  });
+
   // Keep the screen awake while counting, where the browser allows it
-  var lock = null;
   function wake(){
     try {
       if (navigator.wakeLock && document.visibilityState === "visible") {
         navigator.wakeLock.request("screen").then(function(l){
-          lock = l; $("wake").textContent = "Screen stays on";
+          $("wake").textContent = "Screen stays on";
           l.addEventListener("release", function(){ $("wake").textContent = ""; });
         }).catch(function(){});
       }
