@@ -88,6 +88,11 @@ textarea.short{min-height:90px}
 .crow input[type=color]{width:48px;height:42px;border:0;padding:0;background:transparent;flex:none}
 .crow input[type=text]{flex:1;min-width:0;background:var(--surface);border:2px solid var(--line);border-radius:10px;padding:10px;font-size:1rem;-webkit-user-select:text;user-select:text}
 .dot{display:inline-block;width:.85em;height:.85em;border-radius:50%;vertical-align:-.08em;margin:0 6px 0 2px;border:1px solid rgba(128,128,128,.6)}
+.stitchwrap{position:relative;flex:1;min-height:0;display:flex}
+.stitchwrap .stitch{flex:1}
+.finish{position:absolute;top:10px;right:10px;z-index:2;min-height:44px;padding:8px 12px;border-radius:12px;background:var(--surface);color:var(--ink);font-weight:700;font-size:.85rem;box-shadow:0 1px 5px rgba(0,0,0,.3)}
+.finish[hidden]{display:none}
+.finish:active{transform:scale(.97)}
 .now.flash{animation:nowflash .9s ease-out}
 @keyframes nowflash{0%{box-shadow:0 0 0 7px var(--row);transform:scale(1.025)}100%{box-shadow:0 0 0 0 transparent;transform:none}}
 @media (prefers-reduced-motion: reduce){.now.flash{animation:none;box-shadow:0 0 0 4px var(--row)}}
@@ -112,10 +117,13 @@ textarea.short{min-height:90px}
     <div id="nowbody"></div>
     <div class="nowthen" id="nowthen"></div>
   </div>
-  <button class="stitch" id="stitch" aria-label="Add a stitch">
-    <span class="big" id="stitches">0</span>
-    <span class="sub" id="sub">Tap to add a stitch</span>
-  </button>
+  <div class="stitchwrap">
+    <button class="stitch" id="stitch" aria-label="Add a stitch">
+      <span class="big" id="stitches">0</span>
+      <span class="sub" id="sub">Tap to add a stitch</span>
+    </button>
+    <button class="finish" id="finish" hidden>Finish step</button>
+  </div>
   <div class="bar">
     <button class="small" id="minus" aria-label="Remove a stitch">− Stitch</button>
     <button class="small" id="undo">Undo</button>
@@ -330,6 +338,12 @@ textarea.short{min-height:90px}
 
   function currentRow(){ return parsed.rows[s.rows] || null; }
 
+  function stepRemaining(){
+    var row = currentRow();
+    if (!row) return 0;
+    var w = whereAmI(row, s.stitches, s.countCh);
+    return w.finished ? 0 : w.size - w.offset;
+  }
   var lastKey = null, allowAlert = false, actx = null;
   function beep(){
     try {
@@ -395,6 +409,10 @@ textarea.short{min-height:90px}
       (target > 0 ? "of " + target + " – tap to add a stitch" : "Tap to add a stitch");
     $("undo").disabled = s.history.length === 0;
     $("minus").disabled = s.stitches === 0;
+    var rem = stepRemaining(), fin = $("finish");
+    fin.hidden = rem <= 0;
+    fin.textContent = "Finish step (+" + rem + ")";
+    fin.setAttribute("aria-label", "Finish this step: add " + rem + " stitches");
     renderNow();
     save();
   }
@@ -402,6 +420,10 @@ textarea.short{min-height:90px}
   $("stitch").addEventListener("click", function(){ snap(); s.stitches++; allowAlert = true; render(); allowAlert = false; });
   $("minus").addEventListener("click", function(){ if (s.stitches > 0) { snap(); s.stitches--; render(); } });
   $("next").addEventListener("click", function(){ snap(); s.rows++; s.stitches = 0; allowAlert = true; render(); allowAlert = false; });
+  $("finish").addEventListener("click", function(){
+    var n = stepRemaining();
+    if (n > 0) { snap(); s.stitches += n; allowAlert = true; render(); allowAlert = false; }
+  });
   $("undo").addEventListener("click", function(){
     var h = s.history.pop();
     if (h) { s.stitches = h.stitches; s.rows = h.rows; render(); }
