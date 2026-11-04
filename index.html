@@ -84,6 +84,13 @@ textarea.short{min-height:90px}
 .check{display:flex;gap:10px;align-items:center;font-size:.95rem;font-weight:600}
 .check input{width:22px;height:22px}
 .rowlist{background:var(--surface);border-radius:14px;padding:8px 12px;max-height:180px;overflow-y:auto;font-size:.9rem;line-height:1.6}
+.crow{display:flex;gap:8px;align-items:center}
+.crow input[type=color]{width:48px;height:42px;border:0;padding:0;background:transparent;flex:none}
+.crow input[type=text]{flex:1;min-width:0;background:var(--surface);border:2px solid var(--line);border-radius:10px;padding:10px;font-size:1rem;-webkit-user-select:text;user-select:text}
+.dot{display:inline-block;width:.85em;height:.85em;border-radius:50%;vertical-align:-.08em;margin:0 6px 0 2px;border:1px solid rgba(128,128,128,.6)}
+.now.flash{animation:nowflash .9s ease-out}
+@keyframes nowflash{0%{box-shadow:0 0 0 7px var(--row);transform:scale(1.025)}100%{box-shadow:0 0 0 0 transparent;transform:none}}
+@media (prefers-reduced-motion: reduce){.now.flash{animation:none;box-shadow:0 0 0 4px var(--row)}}
 @media (prefers-reduced-motion: reduce){*{transition:none!important}}
 </style>
 </head>
@@ -127,8 +134,19 @@ textarea.short{min-height:90px}
     <p>Paste your pattern with its row headings, such as “Row 3” or “3rd Row”. The app will show what to do next based on your row and stitch counts.</p>
     <textarea id="pattern" placeholder="Paste your pattern here"></textarea>
     <label class="check"><input type="checkbox" id="countCh"> Count chains as stitches</label>
+    <label class="check"><input type="checkbox" id="alertFlash"> Flash the instruction when it changes</label>
+    <label class="check"><input type="checkbox" id="alertSound"> Beep when the instruction changes</label>
     <div class="status" id="patStatus"></div>
     <div class="rowlist" id="rowlist" hidden></div>
+    <h2>Yarn colours</h2>
+    <p>Add each yarn name as it appears in the pattern and pick a matching colour. The counter then shows which yarn you are using and can colour the big button to match.</p>
+    <div id="colourList" style="display:flex;flex-direction:column;gap:8px"></div>
+    <div class="btns">
+      <button class="btn" id="findColours">Find colours in pattern</button>
+      <button class="btn alt" id="addColour">Add colour</button>
+    </div>
+    <div class="status" id="colourStatus"></div>
+    <label class="check"><input type="checkbox" id="tintBtn"> Colour the big button to match the yarn</label>
     <h2>Backup</h2>
     <p>Copy your backup into a note or message. Paste it here later to get your project back.</p>
     <div class="btns">
@@ -144,7 +162,7 @@ textarea.short{min-height:90px}
 <script>
 (function(){
   var KEY = "crochet-counter-v1";
-  var s = { name:"", stitches:0, rows:1, target:0, history:[], pattern:"", countCh:false };
+  var s = { name:"", stitches:0, rows:1, target:0, history:[], pattern:"", countCh:false, colours:[], tintBtn:true, alertFlash:true, alertSound:true };
   var $ = function(id){ return document.getElementById(id); };
 
   try {
@@ -201,29 +219,153 @@ textarea.short{min-height:90px}
       var g = row.segs[i], c = segCount(g, countCh);
       if (c === 0) { pending.push(g.text); continue; }
       if (cum + c > done) {
-        return { finished: false, pending: done === cum ? pending : [], cur: g.text, offset: done - cum, size: c,
+        return { finished: false, idx: i, pending: done === cum ? pending : [], cur: g.text, offset: done - cum, size: c,
                  then: i + 1 < row.segs.length ? row.segs[i + 1].text : "" };
       }
       cum += c; pending = [];
     }
     return { finished: true, pending: pending };
   }
+  function escRe(ch){ return ch.replace(/[.*+?^${}()|[\]\\\/-]/g, "\\$&"); }
+  function colourMatcher(cols){
+    var keys = {}, parts = [];
+    cols.forEach(function(c, i){
+      var k = c.name.replace(/\s+/g, "").toLowerCase();
+      if (k && !(k in keys)) { keys[k] = i; parts.push(k); }
+    });
+    if (!parts.length) return null;
+    parts.sort(function(a, b){ return b.length - a.length; });
+    return { re: parts.map(function(k){ return k.split("").map(escRe).join("\\s*"); }).join("|"), keys: keys };
+  }
+  function colourPieces(text, cm){
+    var out = [];
+    if (!cm) { var c0 = countStitches(text); return [{ col: -1, st: c0.st, ch: c0.ch }]; }
+    var re = new RegExp(cm.re, "gi"), m, hits = [];
+    while ((m = re.exec(text)) !== null) {
+      var b = text.charAt(m.index - 1), a = text.charAt(m.index + m[0].length);
+      if (/[A-Za-z]/.test(b) || /[A-Za-z]/.test(a)) { re.lastIndex = m.index + 1; continue; }
+      hits.push({ i: m.index, k: cm.keys[m[0].replace(/\s+/g, "").toLowerCase()] });
+    }
+    var start = 0, col = -1;
+    hits.forEach(function(h){
+      var c = countStitches(text.slice(start, h.i));
+      out.push({ col: col, st: c.st, ch: c.ch });
+      start = h.i; col = h.k;
+    });
+    var last = countStitches(text.slice(start));
+    out.push({ col: col, st: last.st, ch: last.ch });
+    return out;
+  }
+  function colourAt(P, rowNum, done, cols, countCh){
+    var cm = colourMatcher(cols), cur = null, cum = 0;
+    var nums = P.order.slice().sort(function(a, b){ return a - b; });
+    for (var r = 0; r < nums.length; r++) {
+      if (nums[r] > rowNum) break;
+      var row = P.rows[nums[r]], mine = nums[r] === rowNum;
+      for (var i = 0; i < row.segs.length; i++) {
+        var ps = colourPieces(row.segs[i].text, cm);
+        for (var j = 0; j < ps.length; j++) {
+          var p = ps[j];
+          if (p.col >= 0) cur = p.col;
+          if (!mine) continue;
+          var c = p.st + (countCh ? p.ch : 0);
+          if (c > 0 && cum + c > done) return cur;
+          cum += c;
+        }
+      }
+    }
+    return cur;
+  }
+  var HUES = [["teal","#1B7F86"],["turquoise","#2BB5B0"],["aqua","#4CC9D0"],["navy","#1F2A5C"],["royal","#2A4FBF"],["sky","#6BB6E8"],["blue","#2F6FD0"],["lavender","#B7A6E0"],["lilac","#C3A4DB"],["purple","#7A3FA0"],["plum","#6E2F5B"],["magenta","#C2278C"],["pink","#EE7FB0"],["rose","#E26A8A"],["coral","#F2776A"],["red","#C8312F"],["crimson","#A8142E"],["burgundy","#6E1A2B"],["orange","#EE8A25"],["peach","#F6B38A"],["mustard","#D1A21B"],["gilt","#C9A227"],["gold","#D4A017"],["yellow","#F2D229"],["lemon","#F4E04D"],["cream","#F3E9CF"],["ivory","#F6F1E0"],["white","#F7F7F7"],["beige","#D8C3A0"],["tan","#C6A47A"],["brown","#7A4E2D"],["lime","#9BCB3C"],["olive","#7B8236"],["sage","#9CAF88"],["mint","#9EDBB8"],["green","#3B9B4F"],["silver","#B8BCC4"],["grey","#8A8F99"],["gray","#8A8F99"],["charcoal","#3A3D45"],["black","#1B1B1D"]];
+  function guessHex(name){
+    var l = name.toLowerCase();
+    for (var i = 0; i < HUES.length; i++) if (l.indexOf(HUES[i][0]) !== -1) return HUES[i][1];
+    return "#888888";
+  }
+  function textOn(hex){
+    var n = parseInt(hex.slice(1), 16), r = n >> 16, g = (n >> 8) & 255, b = n & 255;
+    return (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? "#1B1B1B" : "#FFFFFF";
+  }
+  function detectColours(text){
+    var STOP = { row:1, using:1, turn:1, ch:1, rs:1, ws:1, then:1, and:1, repeat:1, join:1, work:1, make:1, skip:1, into:1, in:1, new:1, ball:1, of:1, with:1, a:1, the:1, change:1, to:1, switch:1 };
+    var found = [], seen = {};
+    function push(words){
+      while (words.length && STOP[words[0].toLowerCase()]) words.shift();
+      while (words.length && STOP[words[words.length - 1].toLowerCase()]) words.pop();
+      var n = words.join(" "), k = n.replace(/\s+/g, "").toLowerCase();
+      if (!k || seen[k] || STOP[k]) return;
+      seen[k] = 1; found.push(n);
+    }
+    var m, re1 = /\b(?:using|bring in(?:\s+(?:a\s+)?new\s+ball\s+of)?|join(?:\s+in)?|change to|switch to|with)\s+([A-Za-z]+(?:\s+[A-Za-z]+){0,2})/gi;
+    while ((m = re1.exec(text)) !== null) {
+      var ws = m[1].split(/\s+/), keep = [];
+      for (var i = 0; i < ws.length && /^[A-Z]/.test(ws[i]); i++) keep.push(ws[i]);
+      push(keep);
+    }
+    var re2 = /([A-Z][A-Za-z]*(?:\s+[A-Z][A-Za-z]*)*)\s+\d*\s*(?:htr|dtr|tr|dc|sc|ch)\b/g;
+    while ((m = re2.exec(text)) !== null) push(m[1].split(/\s+/));
+    return found;
+  }
   // PARSE-END
 
   var parsed = parsePattern(s.pattern);
 
+  function curColour(){
+    if (!s.pattern.trim() || !Array.isArray(s.colours)) return null;
+    var cols = s.colours.filter(function(c){ return c && c.name && c.name.trim() && /^#[0-9a-fA-F]{6}$/.test(c.hex); });
+    if (!cols.length) return null;
+    var idx = colourAt(parsed, s.rows, s.stitches, cols, s.countCh);
+    return idx == null ? null : cols[idx];
+  }
+  function setHead(text, col){
+    var h = $("nowhead");
+    h.textContent = text;
+    if (col) {
+      h.appendChild(document.createTextNode(" · "));
+      var d = document.createElement("span"); d.className = "dot"; d.style.background = col.hex; h.appendChild(d);
+      h.appendChild(document.createTextNode(col.name.trim()));
+    }
+    $("now").style.borderLeftColor = col ? col.hex : "";
+  }
+
   function currentRow(){ return parsed.rows[s.rows] || null; }
 
+  var lastKey = null, allowAlert = false, actx = null;
+  function beep(){
+    try {
+      var AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+      if (!actx) actx = new AC();
+      if (actx.state === "suspended") actx.resume();
+      var o = actx.createOscillator(), g = actx.createGain(), t = actx.currentTime;
+      o.type = "sine"; o.frequency.value = 880; o.connect(g); g.connect(actx.destination);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.25, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
+      o.start(t); o.stop(t + 0.3);
+    } catch(e) {}
+  }
+  function alertNew(){
+    if (s.alertFlash) {
+      var b = $("now"); b.classList.remove("flash"); void b.offsetWidth; b.classList.add("flash");
+      setTimeout(function(){ b.classList.remove("flash"); }, 900);
+    }
+    if (s.alertSound) beep();
+  }
+  function track(key){
+    if (lastKey !== null && key !== lastKey && allowAlert) alertNew();
+    lastKey = key;
+  }
   function renderNow(){
     var box = $("now");
-    if (!s.pattern.trim() || !parsed.order.length) { box.hidden = true; return; }
+    if (!s.pattern.trim() || !parsed.order.length) { box.hidden = true; lastKey = null; return; }
     box.hidden = false;
     var body = $("nowbody");
     while (body.firstChild) body.removeChild(body.firstChild);
     var row = currentRow();
-    if (!row) { $("nowhead").textContent = "Row " + s.rows; add(body, "nowmain", "No instructions found for this row"); $("nowthen").textContent = ""; return; }
-    $("nowhead").textContent = "Row " + row.n + (row.side ? " (" + row.side + ")" : "");
-    var w = whereAmI(row, s.stitches, s.countCh);
+    if (!row) { track("r" + s.rows + "none"); $("nowhead").textContent = "Row " + s.rows; add(body, "nowmain", "No instructions found for this row"); $("nowthen").textContent = ""; return; }
+    setHead("Row " + row.n + (row.side ? " (" + row.side + ")" : ""), curColour());
+    var w = whereAmI(row, s.stitches, s.countCh); var ccol = curColour();
+    track("r" + row.n + "|" + (w.finished ? "done" : w.idx) + "|" + (ccol ? ccol.hex : ""));
     if (w.finished) {
       add(body, "nowmain", "Row complete");
       $("nowthen").textContent = w.pending.length ? "Then: " + w.pending.join(", ") : "Tap Next row";
@@ -246,6 +388,9 @@ textarea.short{min-height:90px}
     else { ti.disabled = false; ti.value = s.target > 0 ? s.target : ""; $("targetLabel").innerHTML = "Stitches<br>per row"; }
     var done = target > 0 && s.stitches >= target;
     $("stitch").classList.toggle("done", done);
+    var col = curColour(), sb = $("stitch");
+    if (s.tintBtn && col && !done) { sb.style.background = col.hex; sb.style.color = textOn(col.hex); }
+    else { sb.style.removeProperty("background"); sb.style.removeProperty("color"); }
     $("sub").textContent = done ? "Row complete – tap Next row" :
       (target > 0 ? "of " + target + " – tap to add a stitch" : "Tap to add a stitch");
     $("undo").disabled = s.history.length === 0;
@@ -254,9 +399,9 @@ textarea.short{min-height:90px}
     save();
   }
 
-  $("stitch").addEventListener("click", function(){ snap(); s.stitches++; render(); });
+  $("stitch").addEventListener("click", function(){ snap(); s.stitches++; allowAlert = true; render(); allowAlert = false; });
   $("minus").addEventListener("click", function(){ if (s.stitches > 0) { snap(); s.stitches--; render(); } });
-  $("next").addEventListener("click", function(){ snap(); s.rows++; s.stitches = 0; render(); });
+  $("next").addEventListener("click", function(){ snap(); s.rows++; s.stitches = 0; allowAlert = true; render(); allowAlert = false; });
   $("undo").addEventListener("click", function(){
     var h = s.history.pop();
     if (h) { s.stitches = h.stitches; s.rows = h.rows; render(); }
@@ -297,7 +442,7 @@ textarea.short{min-height:90px}
   }
   $("openPanel").addEventListener("click", function(){
     $("pattern").value = s.pattern; $("countCh").checked = !!s.countCh;
-    renderPatternStatus(); $("panel").hidden = false; $("panel").scrollTop = 0;
+    renderPatternStatus(); renderColours(); $("tintBtn").checked = !!s.tintBtn; $("alertFlash").checked = !!s.alertFlash; $("alertSound").checked = !!s.alertSound; $("panel").hidden = false; $("panel").scrollTop = 0;
   });
   $("closePanel").addEventListener("click", function(){ $("panel").hidden = true; render(); });
   $("pattern").addEventListener("input", function(e){
@@ -305,8 +450,41 @@ textarea.short{min-height:90px}
   });
   $("countCh").addEventListener("change", function(e){ s.countCh = e.target.checked; renderPatternStatus(); save(); });
 
+  function renderColours(){
+    var list = $("colourList");
+    while (list.firstChild) list.removeChild(list.firstChild);
+    s.colours.forEach(function(c, i){
+      var row = document.createElement("div"); row.className = "crow";
+      var pick = document.createElement("input"); pick.type = "color"; pick.value = c.hex;
+      pick.setAttribute("aria-label", "Colour for " + (c.name || "yarn"));
+      pick.addEventListener("input", function(){ c.hex = pick.value; save(); });
+      var nm = document.createElement("input"); nm.type = "text"; nm.value = c.name; nm.placeholder = "Yarn name";
+      nm.setAttribute("aria-label", "Yarn name");
+      nm.addEventListener("input", function(){ c.name = nm.value; save(); });
+      var rm = document.createElement("button"); rm.className = "menu"; rm.textContent = "Remove";
+      rm.addEventListener("click", function(){ s.colours.splice(i, 1); renderColours(); save(); });
+      row.appendChild(pick); row.appendChild(nm); row.appendChild(rm); list.appendChild(row);
+    });
+  }
+  $("addColour").addEventListener("click", function(){
+    s.colours.push({ name: "", hex: "#888888" }); renderColours(); save();
+    var ins = $("colourList").querySelectorAll("input[type=text]"); if (ins.length) ins[ins.length - 1].focus();
+  });
+  $("findColours").addEventListener("click", function(){
+    var have = {}; s.colours.forEach(function(c){ have[c.name.replace(/\s+/g, "").toLowerCase()] = 1; });
+    var added = 0;
+    detectColours(s.pattern).forEach(function(n){
+      if (!have[n.replace(/\s+/g, "").toLowerCase()]) { s.colours.push({ name: n, hex: guessHex(n) }); added++; }
+    });
+    $("colourStatus").textContent = added ? "Added " + added + " colour" + (added === 1 ? "" : "s") + ". Check each swatch and change any that look wrong." : "No new colour names found. Use Add colour to type them in.";
+    renderColours(); save();
+  });
+  $("tintBtn").addEventListener("change", function(e){ s.tintBtn = e.target.checked; save(); });
+  $("alertFlash").addEventListener("change", function(e){ s.alertFlash = e.target.checked; save(); if (s.alertFlash) { var b = $("closePanel"); b.classList.remove("flash"); void b.offsetWidth; b.classList.add("flash"); setTimeout(function(){ b.classList.remove("flash"); }, 900); } });
+  $("alertSound").addEventListener("change", function(e){ s.alertSound = e.target.checked; save(); if (s.alertSound) beep(); });
+
   function backupText(){
-    return JSON.stringify({ v:1, name:s.name, stitches:s.stitches, rows:s.rows, target:s.target, countCh:s.countCh, pattern:s.pattern });
+    return JSON.stringify({ v:1, name:s.name, stitches:s.stitches, rows:s.rows, target:s.target, countCh:s.countCh, tintBtn:s.tintBtn, alertFlash:s.alertFlash, alertSound:s.alertSound, colours:s.colours, pattern:s.pattern });
   }
   function msg(t){ $("backupStatus").textContent = t; }
   $("copyBackup").addEventListener("click", function(){
@@ -332,6 +510,10 @@ textarea.short{min-height:90px}
       s.name = String(d.name || ""); s.stitches = Math.max(0, parseInt(d.stitches, 10) || 0);
       s.rows = Math.max(1, parseInt(d.rows, 10) || 1); s.target = Math.max(0, parseInt(d.target, 10) || 0);
       s.countCh = !!d.countCh; s.pattern = String(d.pattern || ""); s.history = [];
+      if (Array.isArray(d.colours)) s.colours = d.colours.filter(function(c){ return c && typeof c.name === "string" && /^#[0-9a-fA-F]{6}$/.test(c.hex); }).map(function(c){ return { name: c.name, hex: c.hex }; });
+      if ("tintBtn" in d) s.tintBtn = !!d.tintBtn;
+      if ("alertFlash" in d) s.alertFlash = !!d.alertFlash;
+      if ("alertSound" in d) s.alertSound = !!d.alertSound;
       parsed = parsePattern(s.pattern);
       $("pattern").value = s.pattern; $("countCh").checked = s.countCh;
       renderPatternStatus(); render(); msg("Restored. You are on row " + s.rows + ", stitch " + s.stitches + ".");
