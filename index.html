@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Crochet counter</title>
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="icon" href="icon.png">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Crochet">
+<style>
+:root{
+  box-sizing:border-box;
+  --bg:#ECEEF6; --surface:#FFFFFF; --ink:#22264B; --muted:#6A6F94;
+  --stitch:#F0B429; --stitch-ink:#2B2100; --row:#3B4194; --row-ink:#FFFFFF; --done:#2E9E6B; --line:#D5D8EA;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#14162B; --surface:#1E2140; --ink:#EEF0FF; --muted:#9A9FC8;
+    --stitch:#F0B429; --stitch-ink:#2B2100; --row:#6C74E0; --row-ink:#10122A; --done:#4CC38A; --line:#31356A;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#14162B; --surface:#1E2140; --ink:#EEF0FF; --muted:#9A9FC8;
+  --stitch:#F0B429; --stitch-ink:#2B2100; --row:#6C74E0; --row-ink:#10122A; --done:#4CC38A; --line:#31356A;
+  color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:inherit}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:ui-rounded,"SF Pro Rounded",system-ui,-apple-system,"Segoe UI",sans-serif;
+  -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.app{height:100%;display:flex;flex-direction:column;gap:12px;padding:14px;max-width:560px;margin:0 auto}
+input{font:inherit;color:inherit}
+.name{background:transparent;border:0;border-bottom:2px solid var(--line);font-size:1.15rem;font-weight:600;padding:6px 2px;width:100%;-webkit-user-select:text;user-select:text;border-radius:0}
+.name:focus{outline:none;border-color:var(--row)}
+button{font:inherit;border:0;cursor:pointer;color:inherit}
+button:focus-visible,.name:focus-visible,.target input:focus-visible{outline:3px solid var(--row);outline-offset:2px}
+.rows{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--surface);border-radius:20px;padding:12px 14px 12px 20px}
+.label{font-size:.9rem;color:var(--muted);font-weight:600}
+.rownum{font-size:3rem;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
+.next{background:var(--row);color:var(--row-ink);font-weight:700;font-size:1.05rem;padding:16px 18px;border-radius:16px;min-width:128px}
+.next:active{transform:scale(.97)}
+.stitch{flex:1;min-height:0;background:var(--stitch);color:var(--stitch-ink);border-radius:28px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;transition:background .15s,color .15s}
+.stitch:active{transform:scale(.985)}
+.stitch .big{font-size:min(30vw,9.5rem);font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
+.stitch .sub{font-size:1rem;font-weight:700;opacity:.8}
+.stitch.done{background:var(--done);color:#fff}
+.bar{display:grid;grid-template-columns:1fr 1fr 1.3fr;gap:10px}
+.small{background:var(--surface);border-radius:16px;padding:14px 8px;font-weight:700;font-size:1rem}
+.small:active{transform:scale(.97)}
+.small:disabled{opacity:.4}
+.target{display:flex;align-items:center;justify-content:center;gap:8px;background:var(--surface);border-radius:16px;padding:6px 10px}
+.target span{font-size:.85rem;color:var(--muted);font-weight:600;line-height:1.1}
+.target input{width:52px;text-align:center;font-size:1.2rem;font-weight:700;background:var(--bg);border:0;border-radius:10px;padding:8px 0;-webkit-user-select:text;user-select:text}
+.foot{display:flex;justify-content:space-between;align-items:center}
+.reset{background:transparent;color:var(--muted);font-size:.9rem;font-weight:600;padding:6px 2px;text-decoration:underline}
+.reset.armed{color:#D6455D;text-decoration:none}
+.wake{font-size:.8rem;color:var(--muted)}
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app">
+  <input class="name" id="name" type="text" placeholder="Project name" maxlength="60" aria-label="Project name">
+  <div class="rows">
+    <div>
+      <div class="label">Row</div>
+      <div class="rownum" id="rows" aria-live="polite">1</div>
+    </div>
+    <button class="next" id="next">Next row</button>
+  </div>
+  <button class="stitch" id="stitch" aria-label="Add a stitch">
+    <span class="big" id="stitches">0</span>
+    <span class="sub" id="sub">Tap to add a stitch</span>
+  </button>
+  <div class="bar">
+    <button class="small" id="minus" aria-label="Remove a stitch">− Stitch</button>
+    <button class="small" id="undo">Undo</button>
+    <label class="target"><span>Stitches<br>per row</span><input id="target" type="number" inputmode="numeric" min="0" max="999" placeholder="–"></label>
+  </div>
+  <div class="foot">
+    <button class="reset" id="reset">Start over</button>
+    <span class="wake" id="wake"></span>
+  </div>
+</div>
+<script>
+(function(){
+  var KEY = "crochet-counter-v1";
+  var s = { name:"", stitches:0, rows:1, target:0, history:[] };
+  var $ = function(id){ return document.getElementById(id); };
+
+  try {
+    var raw = localStorage.getItem(KEY);
+    if (raw) { var p = JSON.parse(raw); if (p && typeof p === "object") { for (var k in s) if (k in p) s[k] = p[k]; } }
+  } catch(e) {}
+  if (!Array.isArray(s.history)) s.history = [];
+
+  function save(){ try { localStorage.setItem(KEY, JSON.stringify(s)); } catch(e) {} }
+  function snap(){ s.history.push({ stitches:s.stitches, rows:s.rows }); if (s.history.length > 100) s.history.shift(); }
+
+  function render(){
+    $("name").value = s.name;
+    $("rows").textContent = s.rows;
+    $("stitches").textContent = s.stitches;
+    $("target").value = s.target > 0 ? s.target : "";
+    var done = s.target > 0 && s.stitches >= s.target;
+    $("stitch").classList.toggle("done", done);
+    $("sub").textContent = done ? "Row complete – tap Next row" :
+      (s.target > 0 ? "of " + s.target + " – tap to add a stitch" : "Tap to add a stitch");
+    $("undo").disabled = s.history.length === 0;
+    $("minus").disabled = s.stitches === 0;
+    save();
+  }
+
+  $("stitch").addEventListener("click", function(){ snap(); s.stitches++; render(); });
+  $("minus").addEventListener("click", function(){ if (s.stitches > 0) { snap(); s.stitches--; render(); } });
+  $("next").addEventListener("click", function(){ snap(); s.rows++; s.stitches = 0; render(); });
+  $("undo").addEventListener("click", function(){
+    var h = s.history.pop();
+    if (h) { s.stitches = h.stitches; s.rows = h.rows; render(); }
+  });
+  $("name").addEventListener("input", function(e){ s.name = e.target.value; save(); });
+  $("target").addEventListener("input", function(e){
+    var v = parseInt(e.target.value, 10);
+    s.target = isNaN(v) || v < 0 ? 0 : v;
+    var done = s.target > 0 && s.stitches >= s.target;
+    $("stitch").classList.toggle("done", done);
+    save();
+  });
+  $("target").addEventListener("change", render);
+
+  var armTimer;
+  $("reset").addEventListener("click", function(){
+    var b = $("reset");
+    if (!b.classList.contains("armed")) {
+      b.classList.add("armed"); b.textContent = "Tap again to reset row and stitch counts";
+      armTimer = setTimeout(function(){ b.classList.remove("armed"); b.textContent = "Start over"; }, 4000);
+    } else {
+      clearTimeout(armTimer);
+      b.classList.remove("armed"); b.textContent = "Start over";
+      s.stitches = 0; s.rows = 1; s.history = []; render();
+    }
+  });
+
+  // Keep the screen awake while counting, where the browser allows it
+  var lock = null;
+  function wake(){
+    try {
+      if (navigator.wakeLock && document.visibilityState === "visible") {
+        navigator.wakeLock.request("screen").then(function(l){
+          lock = l; $("wake").textContent = "Screen stays on";
+          l.addEventListener("release", function(){ $("wake").textContent = ""; });
+        }).catch(function(){});
+      }
+    } catch(e) {}
+  }
+  document.addEventListener("visibilitychange", wake);
+  document.addEventListener("click", function once(){ wake(); document.removeEventListener("click", once); });
+  wake();
+
+  render();
+  if ("serviceWorker" in navigator) { try { navigator.serviceWorker.register("sw.js").catch(function(){}); } catch(e) {} }
+})();
+</script>
+</body>
+</html>
