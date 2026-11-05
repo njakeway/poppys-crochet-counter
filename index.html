@@ -88,6 +88,10 @@ textarea.short{min-height:90px}
 .crow input[type=color]{width:48px;height:42px;border:0;padding:0;background:transparent;flex:none}
 .crow input[type=text]{flex:1;min-width:0;background:var(--surface);border:2px solid var(--line);border-radius:10px;padding:10px;font-size:1rem;-webkit-user-select:text;user-select:text}
 .dot{display:inline-block;width:.85em;height:.85em;border-radius:50%;vertical-align:-.08em;margin:0 6px 0 2px;border:1px solid rgba(128,128,128,.6)}
+.chartwrap{overflow:auto;max-height:60vh;background:var(--surface);border-radius:14px;padding:8px}
+.chartwrap canvas{display:block}
+.chartwrap canvas[hidden]{display:none}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:.9rem;font-weight:600}
 .stitchwrap{position:relative;flex:1;min-height:0;display:flex}
 .stitchwrap .stitch{flex:1}
 .finish{position:absolute;top:10px;right:10px;z-index:2;min-height:44px;padding:8px 12px;border-radius:12px;background:var(--surface);color:var(--ink);font-weight:700;font-size:.85rem;box-shadow:0 1px 5px rgba(0,0,0,.3)}
@@ -103,6 +107,7 @@ textarea.short{min-height:90px}
 <div class="app">
   <div class="top">
     <input class="name" id="name" type="text" placeholder="Project name" maxlength="60" aria-label="Project name">
+    <button class="menu" id="openChart">Chart</button>
     <button class="menu" id="openPanel">Pattern</button>
   </div>
   <div class="rows">
@@ -164,6 +169,16 @@ textarea.short{min-height:90px}
     <textarea class="short" id="backup" placeholder="Your backup appears here. To restore, paste a backup here and tap Restore."></textarea>
     <div class="btns"><button class="btn alt" id="restore">Restore from backup</button></div>
     <div class="status" id="backupStatus"></div>
+  </div>
+</div>
+
+<div class="panel" id="chartPanel" hidden>
+  <div class="inner">
+    <div class="btns"><button class="btn" id="closeChart">Done</button><button class="btn alt" id="chartAdd">+ Stitch</button></div>
+    <div class="status" id="chartInfo"></div>
+    <div class="legend" id="chartLegend"></div>
+    <div class="chartwrap" id="chartScroll"><canvas id="chartCanvas" role="img" aria-label="Chart of every stitch in the pattern"></canvas></div>
+    <p>Row 1 is at the bottom. Bright squares are done, faded squares are still to do, and the square with a ring is your next stitch.</p>
   </div>
 </div>
 
@@ -313,6 +328,21 @@ textarea.short{min-height:90px}
     var re2 = /([A-Z][A-Za-z]*(?:\s+[A-Z][A-Za-z]*)*)\s+\d*\s*(?:htr|dtr|tr|dc|sc|ch)\b/g;
     while ((m = re2.exec(text)) !== null) push(m[1].split(/\s+/));
     return found;
+  }
+  function buildChart(P, cols, countCh){
+    var cm = colourMatcher(cols), cur = -1, out = [];
+    P.order.slice().sort(function(a, b){ return a - b; }).forEach(function(n){
+      var cells = [];
+      P.rows[n].segs.forEach(function(g){
+        colourPieces(g.text, cm).forEach(function(p){
+          if (p.col >= 0) cur = p.col;
+          var c = p.st + (countCh ? p.ch : 0);
+          for (var k = 0; k < c; k++) cells.push(cur);
+        });
+      });
+      out.push({ n: n, cells: cells });
+    });
+    return out;
   }
   // PARSE-END
 
@@ -504,6 +534,66 @@ textarea.short{min-height:90px}
   $("tintBtn").addEventListener("change", function(e){ s.tintBtn = e.target.checked; save(); });
   $("alertFlash").addEventListener("change", function(e){ s.alertFlash = e.target.checked; save(); if (s.alertFlash) { var b = $("closePanel"); b.classList.remove("flash"); void b.offsetWidth; b.classList.add("flash"); setTimeout(function(){ b.classList.remove("flash"); }, 900); } });
   $("alertSound").addEventListener("change", function(e){ s.alertSound = e.target.checked; save(); if (s.alertSound) beep(); });
+
+  function usableColours(){
+    return (Array.isArray(s.colours) ? s.colours : []).filter(function(c){ return c && c.name && c.name.trim() && /^#[0-9a-fA-F]{6}$/.test(c.hex); });
+  }
+  function drawChart(toCurrent){
+    var wrap = $("chartScroll"), cv = $("chartCanvas"), info = $("chartInfo"), leg = $("chartLegend");
+    while (leg.firstChild) leg.removeChild(leg.firstChild);
+    var cols = usableColours(), data = buildChart(parsed, cols, s.countCh);
+    if (!data.length) { cv.hidden = true; info.textContent = "No pattern rows found yet. Tap Done, then Pattern, and paste your pattern."; return; }
+    cv.hidden = false;
+    var maxLen = 1, totalAll = 0, doneAll = 0, used = {};
+    data.forEach(function(r){
+      if (r.cells.length > maxLen) maxLen = r.cells.length;
+      totalAll += r.cells.length;
+      if (r.n < s.rows) doneAll += r.cells.length; else if (r.n === s.rows) doneAll += Math.min(s.stitches, r.cells.length);
+      r.cells.forEach(function(ci){ if (ci >= 0) used[ci] = 1; });
+    });
+    var pct = totalAll ? Math.round(100 * doneAll / totalAll) : 0;
+    info.textContent = "Row " + s.rows + ", stitch " + s.stitches + ". Overall " + doneAll + " of " + totalAll + " stitches (" + pct + "%)." +
+      (cols.length ? "" : " Add yarn colours in Pattern to colour the squares.");
+    Object.keys(used).map(Number).sort(function(a, b){ return a - b; }).forEach(function(i){
+      var item = document.createElement("span"), d = document.createElement("span");
+      d.className = "dot"; d.style.background = cols[i].hex;
+      item.appendChild(d); item.appendChild(document.createTextNode(cols[i].name.trim())); leg.appendChild(item);
+    });
+    var labelW = 30, gap = 1, avail = Math.max(120, wrap.clientWidth - 16 - labelW);
+    var cs = Math.max(3, Math.min(26, Math.floor(avail / maxLen) - gap));
+    var W = labelW + maxLen * (cs + gap) + 2, H = data.length * (cs + gap) + 2;
+    var dpr = Math.min(2, window.devicePixelRatio || 1);
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    cv.style.width = W + "px"; cv.style.height = H + "px";
+    var g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+    var rs = getComputedStyle(document.documentElement);
+    var ink = rs.getPropertyValue("--ink").trim() || "#222", muted = rs.getPropertyValue("--muted").trim() || "#777";
+    var curY = null, fs = Math.max(9, Math.min(12, cs));
+    g.font = "600 " + fs + "px system-ui, sans-serif"; g.textAlign = "right"; g.textBaseline = "middle";
+    data.forEach(function(r, ri){
+      var y = (data.length - 1 - ri) * (cs + gap) + 1, isCur = r.n === s.rows;
+      if (isCur) curY = y;
+      r.cells.forEach(function(ci, k){
+        var x = labelW + k * (cs + gap), hex = ci >= 0 && cols[ci] ? cols[ci].hex : "#8A8F99";
+        var done = r.n < s.rows || (isCur && k < s.stitches);
+        g.globalAlpha = done ? 1 : 0.28; g.fillStyle = hex; g.fillRect(x, y, cs, cs);
+        if (isCur && k === s.stitches) {
+          g.globalAlpha = 1; g.fillStyle = hex; g.fillRect(x, y, cs, cs);
+          g.lineWidth = 2; g.strokeStyle = ink; g.strokeRect(x - 0.5, y - 0.5, cs + 1, cs + 1);
+        }
+      });
+      g.globalAlpha = 1;
+      if (cs >= 11 || r.n % 5 === 0 || isCur) { g.fillStyle = isCur ? ink : muted; g.fillText(String(r.n), labelW - 5, y + cs / 2); }
+    });
+    g.globalAlpha = 1;
+    if (toCurrent && curY !== null) wrap.scrollTop = Math.max(0, curY - wrap.clientHeight / 2);
+  }
+  $("openChart").addEventListener("click", function(){ $("chartPanel").hidden = false; $("chartPanel").scrollTop = 0; drawChart(true); });
+  $("closeChart").addEventListener("click", function(){ $("chartPanel").hidden = true; });
+  $("chartAdd").addEventListener("click", function(){
+    snap(); s.stitches++; allowAlert = true; render(); allowAlert = false; drawChart(false);
+  });
+  window.addEventListener("resize", function(){ if (!$("chartPanel").hidden) drawChart(false); });
 
   function backupText(){
     return JSON.stringify({ v:1, name:s.name, stitches:s.stitches, rows:s.rows, target:s.target, countCh:s.countCh, tintBtn:s.tintBtn, alertFlash:s.alertFlash, alertSound:s.alertSound, colours:s.colours, pattern:s.pattern });
