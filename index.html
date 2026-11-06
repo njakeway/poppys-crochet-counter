@@ -183,6 +183,7 @@ textarea.short{min-height:90px}
     <label class="check"><input type="checkbox" id="tintBtn"> Colour the big button to match the yarn</label>
     <label class="check"><input type="checkbox" id="chartBtn"> Show the stitch chart on the big button instead</label>
     <label class="check"><input type="checkbox" id="flipOnTurn"> Flip the chart at each turn so I always work left to right (right to left if left-handed)</label>
+    <label class="check" style="flex-wrap:wrap">When it flips, <select id="flipMode" style="font:inherit;padding:8px;border-radius:10px;border:2px solid var(--line);background:var(--surface);color:var(--ink);max-width:100%"><option value="dir">keep my stitches moving the same way</option><option value="side">show the side I am working on (front or back)</option></select></label>
     <label class="check"><input type="checkbox" id="startWS"> My pattern starts on the wrong side (only needed if it doesn’t say (ws) or (rs))</label>
     <h2>Backup</h2>
     <p>Copy your backup into a note or message. Paste it here later to get your project back.</p>
@@ -209,7 +210,7 @@ textarea.short{min-height:90px}
 <script>
 (function(){
   var KEY = "crochet-counter-v1";
-  var s = { name:"", stitches:0, rows:1, target:0, history:[], pattern:"", countCh:false, colours:[], tintBtn:true, alertFlash:true, alertSound:true, leftHanded:false, chartBtn:false, miniScale:1, flipOnTurn:true, part:0, prog:{}, startWS:false };
+  var s = { name:"", stitches:0, rows:1, target:0, history:[], pattern:"", countCh:false, colours:[], tintBtn:true, alertFlash:true, alertSound:true, leftHanded:false, chartBtn:false, miniScale:1, flipOnTurn:true, part:0, prog:{}, startWS:false, flipMode:"dir" };
   var $ = function(id){ return document.getElementById(id); };
 
   try {
@@ -657,7 +658,7 @@ textarea.short{min-height:90px}
   }
   $("openPanel").addEventListener("click", function(){
     $("pattern").value = s.pattern; $("countCh").checked = !!s.countCh;
-    renderParts(); renderPatternStatus(); renderColours(); $("tintBtn").checked = !!s.tintBtn; $("chartBtn").checked = !!s.chartBtn; $("flipOnTurn").checked = !!s.flipOnTurn; $("startWS").checked = !!s.startWS; $("alertFlash").checked = !!s.alertFlash; $("alertSound").checked = !!s.alertSound; $("leftHanded").checked = !!s.leftHanded; $("panel").hidden = false; $("panel").scrollTop = 0;
+    renderParts(); renderPatternStatus(); renderColours(); $("tintBtn").checked = !!s.tintBtn; $("chartBtn").checked = !!s.chartBtn; $("flipOnTurn").checked = !!s.flipOnTurn; $("startWS").checked = !!s.startWS; $("flipMode").value = s.flipMode === "side" ? "side" : "dir"; $("alertFlash").checked = !!s.alertFlash; $("alertSound").checked = !!s.alertSound; $("leftHanded").checked = !!s.leftHanded; $("panel").hidden = false; $("panel").scrollTop = 0;
   });
   $("closePanel").addEventListener("click", function(){ $("panel").hidden = true; render(); });
   $("pattern").addEventListener("input", function(e){
@@ -698,6 +699,7 @@ textarea.short{min-height:90px}
   $("chartBtn").addEventListener("change", function(e){ s.chartBtn = e.target.checked; save(); });
   $("flipOnTurn").addEventListener("change", function(e){ s.flipOnTurn = e.target.checked; save(); });
   $("startWS").addEventListener("change", function(e){ s.startWS = e.target.checked; save(); });
+  $("flipMode").addEventListener("change", function(e){ s.flipMode = e.target.value === "side" ? "side" : "dir"; save(); });
   $("alertFlash").addEventListener("change", function(e){ s.alertFlash = e.target.checked; save(); if (s.alertFlash) { var b = $("closePanel"); b.classList.remove("flash"); void b.offsetWidth; b.classList.add("flash"); setTimeout(function(){ b.classList.remove("flash"); }, 900); } });
   $("alertSound").addEventListener("change", function(e){ s.alertSound = e.target.checked; save(); if (s.alertSound) beep(); });
   $("leftHanded").addEventListener("change", function(e){ s.leftHanded = e.target.checked; save(); });
@@ -721,7 +723,7 @@ textarea.short{min-height:90px}
     if (!s.flipOnTurn) return false;
     var cur = null;
     data.forEach(function(r){ if (r.n === s.rows) cur = r; });
-    return cur ? cur.rev !== !!s.leftHanded : false;
+    return cur ? (s.flipMode === "side" ? !!cur.ws : cur.rev !== !!s.leftHanded) : false;
   }
   function drawMini(){
     var btn = $("stitch"), cv = $("miniChart"), sub = $("sub");
@@ -879,7 +881,7 @@ textarea.short{min-height:90px}
   });
 
   function backupText(){
-    return JSON.stringify({ v:1, name:s.name, stitches:s.stitches, rows:s.rows, target:s.target, countCh:s.countCh, tintBtn:s.tintBtn, alertFlash:s.alertFlash, alertSound:s.alertSound, leftHanded:s.leftHanded, chartBtn:s.chartBtn, miniScale:s.miniScale, flipOnTurn:s.flipOnTurn, startWS:s.startWS, colours:s.colours, pattern:s.pattern });
+    return JSON.stringify({ v:1, name:s.name, stitches:s.stitches, rows:s.rows, target:s.target, countCh:s.countCh, tintBtn:s.tintBtn, alertFlash:s.alertFlash, alertSound:s.alertSound, leftHanded:s.leftHanded, chartBtn:s.chartBtn, miniScale:s.miniScale, flipOnTurn:s.flipOnTurn, startWS:s.startWS, flipMode:s.flipMode, colours:s.colours, pattern:s.pattern });
   }
   function msg(t){ $("backupStatus").textContent = t; }
   $("copyBackup").addEventListener("click", function(){
@@ -913,6 +915,7 @@ textarea.short{min-height:90px}
       if ("chartBtn" in d) s.chartBtn = !!d.chartBtn;
       if ("flipOnTurn" in d) s.flipOnTurn = !!d.flipOnTurn;
       if ("startWS" in d) s.startWS = !!d.startWS;
+      if (d.flipMode === "side" || d.flipMode === "dir") s.flipMode = d.flipMode;
       if (typeof d.miniScale === "number") s.miniScale = Math.max(0.3, Math.min(3, d.miniScale));
       reparse();
       $("pattern").value = s.pattern; $("countCh").checked = s.countCh;
