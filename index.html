@@ -149,6 +149,7 @@ textarea.short{min-height:90px}
     <label class="check"><input type="checkbox" id="countCh"> Count chains as stitches</label>
     <label class="check"><input type="checkbox" id="alertFlash"> Flash the instruction when it changes</label>
     <label class="check"><input type="checkbox" id="alertSound"> Beep when the instruction changes</label>
+    <label class="check"><input type="checkbox" id="leftHanded"> I crochet left-handed (flips the chart)</label>
     <div class="status" id="patStatus"></div>
     <div class="rowlist" id="rowlist" hidden></div>
     <h2>Yarn colours</h2>
@@ -174,18 +175,18 @@ textarea.short{min-height:90px}
 
 <div class="panel" id="chartPanel" hidden>
   <div class="inner">
-    <div class="btns"><button class="btn" id="closeChart">Done</button><button class="btn alt" id="chartAdd">+ Stitch</button></div>
+    <div class="btns"><button class="btn" id="closeChart">Done</button><button class="btn alt" id="chartAdd">+ Stitch</button><button class="btn alt" id="chartZoom">Zoom in</button></div>
     <div class="status" id="chartInfo"></div>
     <div class="legend" id="chartLegend"></div>
     <div class="chartwrap" id="chartScroll"><canvas id="chartCanvas" role="img" aria-label="Chart of every stitch in the pattern"></canvas></div>
-    <p>Row 1 is at the bottom. Bright squares are done, faded squares are still to do, and the square with a ring is your next stitch.</p>
+    <p>Row 1 is at the bottom, and rows flip direction each time you turn the work. Bright squares are done, faded squares are still to do, and the square with a ring is your next stitch.</p>
   </div>
 </div>
 
 <script>
 (function(){
   var KEY = "crochet-counter-v1";
-  var s = { name:"", stitches:0, rows:1, target:0, history:[], pattern:"", countCh:false, colours:[], tintBtn:true, alertFlash:true, alertSound:true };
+  var s = { name:"", stitches:0, rows:1, target:0, history:[], pattern:"", countCh:false, colours:[], tintBtn:true, alertFlash:true, alertSound:true, leftHanded:false };
   var $ = function(id){ return document.getElementById(id); };
 
   try {
@@ -204,16 +205,17 @@ textarea.short{min-height:90px}
       var c = str[i];
       if (c === "(") depth++;
       if (c === ")" && depth > 0) depth--;
-      if ((c === "," || c === ";" || c === "\n") && depth === 0) { out.push(cur); cur = ""; }
+      if ((c === "," || c === ";") && depth === 0) { out.push(cur); cur = ""; }
       else cur += c;
     }
     out.push(cur);
     return out.map(function(x){ return x.replace(/\s+/g, " ").trim(); }).filter(Boolean);
   }
   function countStitches(text){
-    var re = /(^|[^A-Za-z])(\d*)\s*(sl\s*st|htr|dtr|tr|dc|sc|ch)(?![A-Za-z])/gi, m, st = 0, ch = 0;
+    var re = /(\d*)(\s*)(sl\s*st|htr|dtr|tr|dc|sc|ch)(?:BLO|FLO)?(?![A-Za-z])/gi, m, st = 0, ch = 0;
     while ((m = re.exec(text)) !== null) {
-      var n = m[2] ? parseInt(m[2], 10) : 1;
+      if (!m[1] && !m[2] && /[A-Za-z]/.test(text.charAt(m.index - 1))) { re.lastIndex = m.index + 1; continue; }
+      var n = m[1] ? parseInt(m[1], 10) : 1;
       if (m[3].toLowerCase() === "ch") ch += n; else st += n;
     }
     return { st: st, ch: ch };
@@ -267,6 +269,7 @@ textarea.short{min-height:90px}
     while ((m = re.exec(text)) !== null) {
       var b = text.charAt(m.index - 1), a = text.charAt(m.index + m[0].length);
       if (/[A-Za-z]/.test(b) || /[A-Za-z]/.test(a)) { re.lastIndex = m.index + 1; continue; }
+      if (/(?:break|breaking|fasten)\s+off[^,.]*$/i.test(text.slice(0, m.index)) && !/rejoin/i.test(text.slice(m.index + m[0].length))) continue;
       hits.push({ i: m.index, k: cm.keys[m[0].replace(/\s+/g, "").toLowerCase()] });
     }
     var start = 0, col = -1;
@@ -299,7 +302,7 @@ textarea.short{min-height:90px}
     }
     return cur;
   }
-  var HUES = [["teal","#1B7F86"],["turquoise","#2BB5B0"],["aqua","#4CC9D0"],["navy","#1F2A5C"],["royal","#2A4FBF"],["sky","#6BB6E8"],["blue","#2F6FD0"],["lavender","#B7A6E0"],["lilac","#C3A4DB"],["purple","#7A3FA0"],["plum","#6E2F5B"],["magenta","#C2278C"],["pink","#EE7FB0"],["rose","#E26A8A"],["coral","#F2776A"],["red","#C8312F"],["crimson","#A8142E"],["burgundy","#6E1A2B"],["orange","#EE8A25"],["peach","#F6B38A"],["mustard","#D1A21B"],["gilt","#C9A227"],["gold","#D4A017"],["yellow","#F2D229"],["lemon","#F4E04D"],["cream","#F3E9CF"],["ivory","#F6F1E0"],["white","#F7F7F7"],["beige","#D8C3A0"],["tan","#C6A47A"],["brown","#7A4E2D"],["lime","#9BCB3C"],["olive","#7B8236"],["sage","#9CAF88"],["mint","#9EDBB8"],["green","#3B9B4F"],["silver","#B8BCC4"],["grey","#8A8F99"],["gray","#8A8F99"],["charcoal","#3A3D45"],["black","#1B1B1D"]];
+  var HUES = [["teal","#2B7FA9"],["turquoise","#2BB5B0"],["aqua","#4CC9D0"],["navy","#1F2A5C"],["royal","#2A4FBF"],["sky","#6BB6E8"],["blue","#2F6FD0"],["lavender","#B7A6E0"],["lilac","#C3A4DB"],["purple","#7A3FA0"],["plum","#6E2F5B"],["magenta","#C2278C"],["pink","#EE7FB0"],["rose","#E26A8A"],["coral","#F2776A"],["emerald","#2F8F5B"],["scarlet","#C23F5A"],["red","#C8312F"],["crimson","#A8142E"],["burgundy","#6E1A2B"],["orange","#EE8A25"],["peach","#F6B38A"],["mustard","#D1A21B"],["gilt","#F3CB4A"],["gold","#EF9F2B"],["yellow","#F2D229"],["lemon","#F4E04D"],["cream","#F3E9CF"],["ivory","#F6F1E0"],["white","#F7F7F7"],["beige","#D8C3A0"],["tan","#C6A47A"],["brown","#7A4E2D"],["lime","#9BCB3C"],["olive","#7B8236"],["sage","#9CAF88"],["mint","#9EDBB8"],["green","#3B9B4F"],["silver","#B8BCC4"],["grey","#8A8F99"],["gray","#8A8F99"],["charcoal","#3A3D45"],["black","#2F3136"]];
   function guessHex(name){
     var l = name.toLowerCase();
     for (var i = 0; i < HUES.length; i++) if (l.indexOf(HUES[i][0]) !== -1) return HUES[i][1];
@@ -329,19 +332,26 @@ textarea.short{min-height:90px}
     while ((m = re2.exec(text)) !== null) push(m[1].split(/\s+/));
     return found;
   }
-  function buildChart(P, cols, countCh){
-    var cm = colourMatcher(cols), cur = -1, out = [];
+  function buildChart(P, cols, countCh, left){
+    var cm = colourMatcher(cols), cur = -1, out = [], prevRev = null, prevTurn = false;
     P.order.slice().sort(function(a, b){ return a - b; }).forEach(function(n){
-      var cells = [];
-      P.rows[n].segs.forEach(function(g){
+      var row = P.rows[n], cells = [];
+      row.segs.forEach(function(g){
         colourPieces(g.text, cm).forEach(function(p){
           if (p.col >= 0) cur = p.col;
           var c = p.st + (countCh ? p.ch : 0);
           for (var k = 0; k < c; k++) cells.push(cur);
         });
       });
-      out.push({ n: n, cells: cells });
+      var rowText = row.segs.map(function(g){ return g.text; }).join(", "), ch = rowText.match(/changing\s+to\s+([A-Za-z ]+?)\s+on\s+(?:the\s+)?(?:last|final)\s+st/i);
+      if (ch && cm && cells.length) { var key = ch[1].replace(/\s+/g, "").toLowerCase(); if (key in cm.keys) cells[cells.length - 1] = cm.keys[key]; }
+      var base = row.side === "RS" ? true : row.side === "WS" ? false : (prevRev === null ? false : (prevTurn ? !prevRev : prevRev));
+      prevRev = base; prevTurn = /\bturn\b/i.test(rowText);
+      out.push({ n: n, cells: cells, rev: base !== !!left });
     });
+    var first = -1;
+    out.forEach(function(r){ if (first < 0) r.cells.forEach(function(c){ if (first < 0 && c >= 0) first = c; }); });
+    if (first >= 0) out.forEach(function(r){ r.cells = r.cells.map(function(c){ return c < 0 ? first : c; }); });
     return out;
   }
   // PARSE-END
@@ -494,7 +504,7 @@ textarea.short{min-height:90px}
   }
   $("openPanel").addEventListener("click", function(){
     $("pattern").value = s.pattern; $("countCh").checked = !!s.countCh;
-    renderPatternStatus(); renderColours(); $("tintBtn").checked = !!s.tintBtn; $("alertFlash").checked = !!s.alertFlash; $("alertSound").checked = !!s.alertSound; $("panel").hidden = false; $("panel").scrollTop = 0;
+    renderPatternStatus(); renderColours(); $("tintBtn").checked = !!s.tintBtn; $("alertFlash").checked = !!s.alertFlash; $("alertSound").checked = !!s.alertSound; $("leftHanded").checked = !!s.leftHanded; $("panel").hidden = false; $("panel").scrollTop = 0;
   });
   $("closePanel").addEventListener("click", function(){ $("panel").hidden = true; render(); });
   $("pattern").addEventListener("input", function(e){
@@ -534,14 +544,16 @@ textarea.short{min-height:90px}
   $("tintBtn").addEventListener("change", function(e){ s.tintBtn = e.target.checked; save(); });
   $("alertFlash").addEventListener("change", function(e){ s.alertFlash = e.target.checked; save(); if (s.alertFlash) { var b = $("closePanel"); b.classList.remove("flash"); void b.offsetWidth; b.classList.add("flash"); setTimeout(function(){ b.classList.remove("flash"); }, 900); } });
   $("alertSound").addEventListener("change", function(e){ s.alertSound = e.target.checked; save(); if (s.alertSound) beep(); });
+  $("leftHanded").addEventListener("change", function(e){ s.leftHanded = e.target.checked; save(); });
 
   function usableColours(){
     return (Array.isArray(s.colours) ? s.colours : []).filter(function(c){ return c && c.name && c.name.trim() && /^#[0-9a-fA-F]{6}$/.test(c.hex); });
   }
+  var chartZoom = 0;
   function drawChart(toCurrent){
     var wrap = $("chartScroll"), cv = $("chartCanvas"), info = $("chartInfo"), leg = $("chartLegend");
     while (leg.firstChild) leg.removeChild(leg.firstChild);
-    var cols = usableColours(), data = buildChart(parsed, cols, s.countCh);
+    var cols = usableColours(), data = buildChart(parsed, cols, s.countCh, s.leftHanded);
     if (!data.length) { cv.hidden = true; info.textContent = "No pattern rows found yet. Tap Done, then Pattern, and paste your pattern."; return; }
     cv.hidden = false;
     var maxLen = 1, totalAll = 0, doneAll = 0, used = {};
@@ -559,36 +571,46 @@ textarea.short{min-height:90px}
       d.className = "dot"; d.style.background = cols[i].hex;
       item.appendChild(d); item.appendChild(document.createTextNode(cols[i].name.trim())); leg.appendChild(item);
     });
-    var labelW = 30, gap = 1, avail = Math.max(120, wrap.clientWidth - 16 - labelW);
-    var cs = Math.max(3, Math.min(26, Math.floor(avail / maxLen) - gap));
-    var W = labelW + maxLen * (cs + gap) + 2, H = data.length * (cs + gap) + 2;
+    var labelW = 28, gap = 1, avail = Math.max(120, wrap.clientWidth - 16 - 2 * labelW);
+    var fit = Math.max(3, Math.min(26, Math.floor(avail / maxLen) - gap));
+    var cs = chartZoom === 0 ? fit : [fit, 12, 20][chartZoom];
+    var gridW = maxLen * (cs + gap), W = 2 * labelW + gridW + 2, H = data.length * (cs + gap) + 2;
     var dpr = Math.min(2, window.devicePixelRatio || 1);
     cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
     cv.style.width = W + "px"; cv.style.height = H + "px";
     var g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
     var rs = getComputedStyle(document.documentElement);
     var ink = rs.getPropertyValue("--ink").trim() || "#222", muted = rs.getPropertyValue("--muted").trim() || "#777";
-    var curY = null, fs = Math.max(9, Math.min(12, cs));
-    g.font = "600 " + fs + "px system-ui, sans-serif"; g.textAlign = "right"; g.textBaseline = "middle";
+    var curX = null, curY = null, fs = Math.max(9, Math.min(12, cs));
+    g.font = "600 " + fs + "px system-ui, sans-serif"; g.textBaseline = "middle";
     data.forEach(function(r, ri){
-      var y = (data.length - 1 - ri) * (cs + gap) + 1, isCur = r.n === s.rows;
+      var y = (data.length - 1 - ri) * (cs + gap) + 1, isCur = r.n === s.rows, len = r.cells.length;
       if (isCur) curY = y;
       r.cells.forEach(function(ci, k){
-        var x = labelW + k * (cs + gap), hex = ci >= 0 && cols[ci] ? cols[ci].hex : "#8A8F99";
+        var xi = r.rev ? len - 1 - k : k, x = labelW + xi * (cs + gap);
+        var hex = ci >= 0 && cols[ci] ? cols[ci].hex : "#8A8F99";
         var done = r.n < s.rows || (isCur && k < s.stitches);
         g.globalAlpha = done ? 1 : 0.28; g.fillStyle = hex; g.fillRect(x, y, cs, cs);
         if (isCur && k === s.stitches) {
-          g.globalAlpha = 1; g.fillStyle = hex; g.fillRect(x, y, cs, cs);
+          curX = x; g.globalAlpha = 1; g.fillStyle = hex; g.fillRect(x, y, cs, cs);
           g.lineWidth = 2; g.strokeStyle = ink; g.strokeRect(x - 0.5, y - 0.5, cs + 1, cs + 1);
         }
       });
       g.globalAlpha = 1;
-      if (cs >= 11 || r.n % 5 === 0 || isCur) { g.fillStyle = isCur ? ink : muted; g.fillText(String(r.n), labelW - 5, y + cs / 2); }
+      if (cs >= 11 || r.n % 5 === 0 || isCur) {
+        g.fillStyle = isCur ? ink : muted; g.textAlign = r.rev ? "left" : "right";
+        g.fillText(String(r.n), r.rev ? labelW + gridW + 4 : labelW - 5, y + cs / 2);
+      }
     });
     g.globalAlpha = 1;
-    if (toCurrent && curY !== null) wrap.scrollTop = Math.max(0, curY - wrap.clientHeight / 2);
+    $("chartZoom").textContent = ["Zoom in", "Zoom more", "Fit all"][chartZoom];
+    if (toCurrent) {
+      if (curY !== null) wrap.scrollTop = Math.max(0, curY - wrap.clientHeight / 2);
+      wrap.scrollLeft = curX !== null ? Math.max(0, curX - wrap.clientWidth / 2) : 0;
+    }
   }
   $("openChart").addEventListener("click", function(){ $("chartPanel").hidden = false; $("chartPanel").scrollTop = 0; drawChart(true); });
+  $("chartZoom").addEventListener("click", function(){ chartZoom = (chartZoom + 1) % 3; drawChart(true); });
   $("closeChart").addEventListener("click", function(){ $("chartPanel").hidden = true; });
   $("chartAdd").addEventListener("click", function(){
     snap(); s.stitches++; allowAlert = true; render(); allowAlert = false; drawChart(false);
@@ -596,7 +618,7 @@ textarea.short{min-height:90px}
   window.addEventListener("resize", function(){ if (!$("chartPanel").hidden) drawChart(false); });
 
   function backupText(){
-    return JSON.stringify({ v:1, name:s.name, stitches:s.stitches, rows:s.rows, target:s.target, countCh:s.countCh, tintBtn:s.tintBtn, alertFlash:s.alertFlash, alertSound:s.alertSound, colours:s.colours, pattern:s.pattern });
+    return JSON.stringify({ v:1, name:s.name, stitches:s.stitches, rows:s.rows, target:s.target, countCh:s.countCh, tintBtn:s.tintBtn, alertFlash:s.alertFlash, alertSound:s.alertSound, leftHanded:s.leftHanded, colours:s.colours, pattern:s.pattern });
   }
   function msg(t){ $("backupStatus").textContent = t; }
   $("copyBackup").addEventListener("click", function(){
@@ -626,6 +648,7 @@ textarea.short{min-height:90px}
       if ("tintBtn" in d) s.tintBtn = !!d.tintBtn;
       if ("alertFlash" in d) s.alertFlash = !!d.alertFlash;
       if ("alertSound" in d) s.alertSound = !!d.alertSound;
+      if ("leftHanded" in d) s.leftHanded = !!d.leftHanded;
       parsed = parsePattern(s.pattern);
       $("pattern").value = s.pattern; $("countCh").checked = s.countCh;
       renderPatternStatus(); render(); msg("Restored. You are on row " + s.rows + ", stitch " + s.stitches + ".");
