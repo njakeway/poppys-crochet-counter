@@ -181,7 +181,7 @@ textarea.short{min-height:90px}
     <div class="status" id="colourStatus"></div>
     <label class="check"><input type="checkbox" id="tintBtn"> Colour the big button to match the yarn</label>
     <label class="check"><input type="checkbox" id="chartBtn"> Show the stitch chart on the big button instead</label>
-    <label class="check"><input type="checkbox" id="flipChart"> Flip the chart when I turn the work, so each row runs the way my hook moves</label>
+    <label class="check"><input type="checkbox" id="flipOnTurn"> Flip the chart each time the pattern says turn</label>
     <h2>Backup</h2>
     <p>Copy your backup into a note or message. Paste it here later to get your project back.</p>
     <div class="btns">
@@ -207,7 +207,7 @@ textarea.short{min-height:90px}
 <script>
 (function(){
   var KEY = "crochet-counter-v1";
-  var s = { name:"", stitches:0, rows:1, target:0, history:[], pattern:"", countCh:false, colours:[], tintBtn:true, alertFlash:true, alertSound:true, leftHanded:false, chartBtn:false, miniScale:1, flipChart:false };
+  var s = { name:"", stitches:0, rows:1, target:0, history:[], pattern:"", countCh:false, colours:[], tintBtn:true, alertFlash:true, alertSound:true, leftHanded:false, chartBtn:false, miniScale:1, flipOnTurn:true };
   var $ = function(id){ return document.getElementById(id); };
 
   try {
@@ -354,7 +354,7 @@ textarea.short{min-height:90px}
     return found;
   }
   function buildChart(P, cols, countCh, left){
-    var cm = colourMatcher(cols), cur = -1, out = [], prevRev = null, prevTurn = false;
+    var cm = colourMatcher(cols), cur = -1, out = [], prevRev = null, prevTurn = false, turns = 0;
     P.order.slice().sort(function(a, b){ return a - b; }).forEach(function(n){
       var row = P.rows[n], cells = [];
       row.segs.forEach(function(g){
@@ -368,7 +368,8 @@ textarea.short{min-height:90px}
       if (ch && cm && cells.length) { var key = ch[1].replace(/\s+/g, "").toLowerCase(); if (key in cm.keys) cells[cells.length - 1] = cm.keys[key]; }
       var base = row.side === "RS" ? true : row.side === "WS" ? false : (prevRev === null ? false : (prevTurn ? !prevRev : prevRev));
       prevRev = base; prevTurn = /\bturn\b/i.test(rowText);
-      out.push({ n: n, cells: cells, rev: base !== !!left });
+      out.push({ n: n, cells: cells, rev: base !== !!left, turns: turns });
+      if (prevTurn) turns++;
     });
     var first = -1;
     out.forEach(function(r){ if (first < 0) r.cells.forEach(function(c){ if (first < 0 && c >= 0) first = c; }); });
@@ -526,7 +527,7 @@ textarea.short{min-height:90px}
   }
   $("openPanel").addEventListener("click", function(){
     $("pattern").value = s.pattern; $("countCh").checked = !!s.countCh;
-    renderPatternStatus(); renderColours(); $("tintBtn").checked = !!s.tintBtn; $("chartBtn").checked = !!s.chartBtn; $("flipChart").checked = !!s.flipChart; $("alertFlash").checked = !!s.alertFlash; $("alertSound").checked = !!s.alertSound; $("leftHanded").checked = !!s.leftHanded; $("panel").hidden = false; $("panel").scrollTop = 0;
+    renderPatternStatus(); renderColours(); $("tintBtn").checked = !!s.tintBtn; $("chartBtn").checked = !!s.chartBtn; $("flipOnTurn").checked = !!s.flipOnTurn; $("alertFlash").checked = !!s.alertFlash; $("alertSound").checked = !!s.alertSound; $("leftHanded").checked = !!s.leftHanded; $("panel").hidden = false; $("panel").scrollTop = 0;
   });
   $("closePanel").addEventListener("click", function(){ $("panel").hidden = true; render(); });
   $("pattern").addEventListener("input", function(e){
@@ -565,7 +566,7 @@ textarea.short{min-height:90px}
   });
   $("tintBtn").addEventListener("change", function(e){ s.tintBtn = e.target.checked; save(); });
   $("chartBtn").addEventListener("change", function(e){ s.chartBtn = e.target.checked; save(); });
-  $("flipChart").addEventListener("change", function(e){ s.flipChart = e.target.checked; save(); });
+  $("flipOnTurn").addEventListener("change", function(e){ s.flipOnTurn = e.target.checked; save(); });
   $("alertFlash").addEventListener("change", function(e){ s.alertFlash = e.target.checked; save(); if (s.alertFlash) { var b = $("closePanel"); b.classList.remove("flash"); void b.offsetWidth; b.classList.add("flash"); setTimeout(function(){ b.classList.remove("flash"); }, 900); } });
   $("alertSound").addEventListener("change", function(e){ s.alertSound = e.target.checked; save(); if (s.alertSound) beep(); });
   $("leftHanded").addEventListener("change", function(e){ s.leftHanded = e.target.checked; save(); });
@@ -586,10 +587,10 @@ textarea.short{min-height:90px}
   }
   function chartModeOn(){ return !!s.chartBtn && getChartData().data.length > 0; }
   function chartMirror(data){
-    if (!s.flipChart) return false;
+    if (!s.flipOnTurn) return false;
     var cur = null;
     data.forEach(function(r){ if (r.n === s.rows) cur = r; });
-    return cur ? cur.rev !== !s.leftHanded : false;
+    return cur ? cur.turns % 2 === 1 : false;
   }
   function drawMini(){
     var btn = $("stitch"), cv = $("miniChart"), sub = $("sub");
@@ -612,7 +613,14 @@ textarea.short{min-height:90px}
     var cs = Math.max(4, Math.min(48, Math.round(auto * (s.miniScale || 1))));
     var cxi = cur.rev ? len - 1 - k : k; if (M) cxi = ML - 1 - cxi;
     var cx = cxi * (cs + gap) + cs / 2, cy = (data.length - 1 - ri) * (cs + gap) + cs / 2;
-    var ox = gutter + (w - gutter) / 2 - cx, oy = h / 2 - cy;
+    var viewW = w - gutter, contentW = ML * (cs + gap), contentH = data.length * (cs + gap);
+    var ox = contentW <= viewW ? gutter + (viewW - contentW) / 2 : gutter - Math.max(0, Math.min(contentW - viewW, cx - viewW / 2));
+    var oy = contentH <= h ? (h - contentH) / 2 : -Math.max(0, Math.min(contentH - h, cy - h / 2));
+    var inset = 70, fw = 130;
+    try { inset = $("stitches").offsetHeight + sub.offsetHeight + 16; fw = $("finish").offsetWidth || 130; } catch (e) {}
+    var ctop = cy - cs / 2, cleft = cxi * (cs + gap), ty = oy + ctop, tx = ox + cleft;
+    if (ty + cs > h - inset - 4) { oy -= ty + cs - (h - inset - 4); ty = oy + ctop; }
+    if (ty < 58 && (tx < 112 || tx + cs > w - fw - 8)) oy += 58 - ty;
     var rs = getComputedStyle(document.documentElement);
     var ink = rs.getPropertyValue("--ink").trim() || "#222", muted = rs.getPropertyValue("--muted").trim() || "#777";
     g.save(); g.beginPath(); g.rect(gutter, 0, w - gutter, h); g.clip();
@@ -629,7 +637,7 @@ textarea.short{min-height:90px}
         g.globalAlpha = done ? 1 : 0.28; g.fillStyle = hex; g.fillRect(x, y, cs, cs);
         if (isCur && kk === s.stitches) {
           g.globalAlpha = 1; g.fillStyle = hex; g.fillRect(x, y, cs, cs);
-          g.lineWidth = 3; g.strokeStyle = ink; g.strokeRect(x - 1, y - 1, cs + 2, cs + 2);
+          g.lineWidth = 3; g.strokeStyle = ink; g.strokeRect(x + 1.5, y + 1.5, cs - 3, cs - 3);
         }
       });
     });
@@ -725,7 +733,7 @@ textarea.short{min-height:90px}
   window.addEventListener("resize", function(){ if (!$("chartPanel").hidden) drawChart(false); drawMini(); });
 
   function backupText(){
-    return JSON.stringify({ v:1, name:s.name, stitches:s.stitches, rows:s.rows, target:s.target, countCh:s.countCh, tintBtn:s.tintBtn, alertFlash:s.alertFlash, alertSound:s.alertSound, leftHanded:s.leftHanded, chartBtn:s.chartBtn, miniScale:s.miniScale, flipChart:s.flipChart, colours:s.colours, pattern:s.pattern });
+    return JSON.stringify({ v:1, name:s.name, stitches:s.stitches, rows:s.rows, target:s.target, countCh:s.countCh, tintBtn:s.tintBtn, alertFlash:s.alertFlash, alertSound:s.alertSound, leftHanded:s.leftHanded, chartBtn:s.chartBtn, miniScale:s.miniScale, flipOnTurn:s.flipOnTurn, colours:s.colours, pattern:s.pattern });
   }
   function msg(t){ $("backupStatus").textContent = t; }
   $("copyBackup").addEventListener("click", function(){
@@ -757,7 +765,7 @@ textarea.short{min-height:90px}
       if ("alertSound" in d) s.alertSound = !!d.alertSound;
       if ("leftHanded" in d) s.leftHanded = !!d.leftHanded;
       if ("chartBtn" in d) s.chartBtn = !!d.chartBtn;
-      if ("flipChart" in d) s.flipChart = !!d.flipChart;
+      if ("flipOnTurn" in d) s.flipOnTurn = !!d.flipOnTurn;
       if (typeof d.miniScale === "number") s.miniScale = Math.max(0.3, Math.min(3, d.miniScale));
       parsed = parsePattern(s.pattern);
       $("pattern").value = s.pattern; $("countCh").checked = s.countCh;
