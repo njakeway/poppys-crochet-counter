@@ -169,6 +169,7 @@ textarea.short{min-height:90px}
     <label class="check"><input type="checkbox" id="alertFlash"> Flash the instruction when it changes</label>
     <label class="check"><input type="checkbox" id="alertSound"> Beep when the instruction changes</label>
     <label class="check"><input type="checkbox" id="leftHanded"> I crochet left-handed (flips the chart)</label>
+    <label class="check" id="partRow" hidden>Part of the pattern <select id="partSel" style="font:inherit;padding:8px;border-radius:10px;border:2px solid var(--line);background:var(--surface);color:var(--ink);max-width:60%"></select></label>
     <div class="status" id="patStatus"></div>
     <div class="rowlist" id="rowlist" hidden></div>
     <h2>Yarn colours</h2>
@@ -181,7 +182,8 @@ textarea.short{min-height:90px}
     <div class="status" id="colourStatus"></div>
     <label class="check"><input type="checkbox" id="tintBtn"> Colour the big button to match the yarn</label>
     <label class="check"><input type="checkbox" id="chartBtn"> Show the stitch chart on the big button instead</label>
-    <label class="check"><input type="checkbox" id="flipOnTurn"> Flip the chart each time the pattern says turn</label>
+    <label class="check"><input type="checkbox" id="flipOnTurn"> Flip the chart to match the side I am working, changing at each turn</label>
+    <label class="check"><input type="checkbox" id="startWS"> My pattern starts on the wrong side (only needed if it doesn’t say (ws) or (rs))</label>
     <h2>Backup</h2>
     <p>Copy your backup into a note or message. Paste it here later to get your project back.</p>
     <div class="btns">
@@ -207,7 +209,7 @@ textarea.short{min-height:90px}
 <script>
 (function(){
   var KEY = "crochet-counter-v1";
-  var s = { name:"", stitches:0, rows:1, target:0, history:[], pattern:"", countCh:false, colours:[], tintBtn:true, alertFlash:true, alertSound:true, leftHanded:false, chartBtn:false, miniScale:1, flipOnTurn:true };
+  var s = { name:"", stitches:0, rows:1, target:0, history:[], pattern:"", countCh:false, colours:[], tintBtn:true, alertFlash:true, alertSound:true, leftHanded:false, chartBtn:false, miniScale:1, flipOnTurn:true, part:0, prog:{}, startWS:false };
   var $ = function(id){ return document.getElementById(id); };
 
   try {
@@ -220,42 +222,154 @@ textarea.short{min-height:90px}
   function snap(){ s.history.push({ stitches:s.stitches, rows:s.rows }); if (s.history.length > 100) s.history.shift(); }
 
   // PARSE-START
+  var TOK = "sl\\s*st|slst|ss|(?:fp|bp)?(?:sc|hdc|htr|dc|dtr|tr)(?:\\s*[2-5]\\s*tog)?|invdec|inc|dec|ch";
+  var NOTCOL = /^(?:CH|SC|HDC|HTR|DC|TR|DTR|SS|INC|DEC)$/;
   function splitTop(str){
     var out = [], depth = 0, cur = "";
     for (var i = 0; i < str.length; i++) {
       var c = str[i];
-      if (c === "(") depth++;
-      if (c === ")" && depth > 0) depth--;
+      if (c === "(" || c === "[") depth++;
+      if ((c === ")" || c === "]") && depth > 0) depth--;
       if ((c === "," || c === ";") && depth === 0) { out.push(cur); cur = ""; }
       else cur += c;
     }
     out.push(cur);
     return out.map(function(x){ return x.replace(/\s+/g, " ").trim(); }).filter(Boolean);
   }
-  function countStitches(text){
-    var re = /(\d*)(\s*)(sl\s*st|htr|dtr|tr|dc|sc|ch)(?:BLO|FLO)?(?![A-Za-z])/gi, m, st = 0, ch = 0;
+  // colour-only notation: "A (18)", "8(A)", "(Color A)"
+  function colourOnly(t){
+    var m = t.match(/^\s*(?:[Cc]olou?r\s+)?([A-Z]{1,3}\d?)\s*[(x×]?\s*(\d+)\s*\)?\s*$/);
+    if (m && !NOTCOL.test(m[1])) return parseInt(m[2], 10);
+    m = t.match(/^\s*(\d+)\s*\(\s*(?:[Cc]olou?r\s+)?([A-Z]{1,3}\d?)\s*\)\s*$/);
+    if (m && !NOTCOL.test(m[2])) return parseInt(m[1], 10);
+    if (/^\s*\(?\s*[Cc]olou?r\s+[A-Z]{1,3}\d?\s*\)?\s*$/.test(t)) return 1;
+    return null;
+  }
+  // stitches made by one instruction: { st, ch, cons (stitches used up), open (count not stated) }
+  function countSeg(raw){
+    var co = colourOnly(raw);
+    if (co !== null) return { st: co, ch: 0, cons: co, open: false };
+    var extra = /\bcounts?\s+as\s+(?:the\s+)?(?:first\s+)?(?:an?\s+)?(?:sc|hdc|htr|dc|tr|dtr)\b/i.test(raw) ? 1 : 0;
+    var text = raw.replace(/\([^)]*\b(?:counts?|rs|ws|right side|wrong side|missed|optional|photo|see)\b[^)]*\)/gi, "");
+    var re = new RegExp("(\\d*)(\\s*)(" + TOK + ")(?:BLO|FLO)?(?![A-Za-z])", "gi"), m, st = 0, ch = 0, cons = 0, explicit = false, found = false;
     while ((m = re.exec(text)) !== null) {
       if (!m[1] && !m[2] && /[A-Za-z]/.test(text.charAt(m.index - 1))) { re.lastIndex = m.index + 1; continue; }
-      var n = m[1] ? parseInt(m[1], 10) : 1;
-      if (m[3].toLowerCase() === "ch") ch += n; else st += n;
+      var tk = m[3].toLowerCase().replace(/\s+/g, ""), rest = text.slice(re.lastIndex);
+      var aft = rest.match(/^\s*(\d+)(?!\s*(?:sts?\b|stitch))/);
+      var inn = rest.match(/^(?:\s*\d+)?\s*(?:in|into)\s+(?:the\s+)?(?:each\s+of\s+)?(?:next|nxt|all)\s+(\d+)/i);
+      var n = m[1] ? parseInt(m[1], 10) : aft ? parseInt(aft[1], 10) : 1, k = inn ? parseInt(inn[1], 10) : 1;
+      if (tk === "ch") { ch += n * k; continue; }
+      if (tk.indexOf("sl") === 0 || tk === "ss") continue;
+      var tg = /(\d)tog$/.exec(tk), tog = !!tg || tk === "dec" || tk === "invdec";
+      st += tk === "inc" ? 2 * n * k : n * k;
+      cons += tog ? (tg ? parseInt(tg[1], 10) : 2) * n * k : n * k;
+      found = true;
+      if (m[1] || aft || inn) explicit = true;
     }
-    return { st: st, ch: ch };
+    var open = found && !explicit && /\b(?:around|across|to end|to the end|to last|rest of|each|every)\b/i.test(text);
+    return { st: st + extra, ch: ch, cons: cons + extra, open: open, fac: cons > 0 ? st / cons : 1 };
+  }
+  // trailing stated total such as "(24)", "(24 sts)" or "[24]"
+  function takeStated(body){
+    var re = /[(\[]\s*(\d+)\s*(?:sts?|stitches)?\s*[)\]]/g, m, hit = null;
+    while ((m = re.exec(body)) !== null) {
+      var after = body.slice(m.index + m[0].length), before = body.slice(0, m.index).replace(/\s+$/, "");
+      if (/\b(?:sc|hdc|htr|dc|tr|dtr|inc|dec|ch)\b/i.test(after)) continue;
+      var w = before.match(/(?:^|[\s,;(])([A-Z]{1,3}\d?)$/);
+      if (w && !NOTCOL.test(w[1])) continue;
+      hit = { i: m.index, n: parseInt(m[1], 10), len: m[0].length };
+    }
+    if (!hit) return { body: body, stated: null };
+    var rest = body.slice(hit.i + hit.len).replace(/^[\s.!]+/, "");
+    return { body: body.slice(0, hit.i).replace(/\s+$/, "") + (rest ? ", " + rest : ""), stated: hit.n };
+  }
+  // "(sc, inc) x 6", "[sc, dec] repeat 3 times", "(sc, inc) around", "inc x 6"
+  function expandRepeats(body, stated, prev){
+    var re = /[(\[]([^()\[\]]*)[)\]]\s*(?:,\s*)?(?:(?:x|×)\s*(\d+)|(?:repeat\s+)?(\d+)\s*times?|(?:repeat\s+)?(around|across|to\s+end))/i;
+    for (var guard = 0; guard < 60; guard++) {
+      var m = re.exec(body); if (!m) break;
+      var inner = m[1].trim(), reps = parseInt(m[2] || m[3] || "0", 10);
+      if (!reps) {
+        var prod = 0, cons = 0, others = 0;
+        splitTop(inner).forEach(function(t){ var g = countSeg(t); prod += g.st; cons += g.cons; });
+        splitTop(body.slice(0, m.index) + " , " + body.slice(m.index + m[0].length)).forEach(function(t){ var g = countSeg(t); if (!g.open) others += g.st; });
+        if (stated != null && prod > 0) reps = Math.max(1, Math.round((stated - others) / prod));
+        else if (prev && cons > 0) reps = Math.max(1, Math.round(prev / cons));
+        else reps = 1;
+      }
+      body = body.slice(0, m.index) + (inner ? new Array(reps + 1).join(inner + ", ") : "") + body.slice(m.index + m[0].length);
+    }
+    var rep = function(a, w, n){ return new Array(parseInt(n, 10) + 1).join(w + ", "); };
+    return body.replace(/\b(inc|dec|invdec)\s*[x×]\s*(\d+)\b/gi, rep).replace(/\b(inc|dec|invdec)\s+(\d+)\s+times\b/gi, rep);
+  }
+  // find a short heading line (such as "Head" or "Legs 2x:") at the end of some text
+  function headingCut(body){
+    var lines = body.split("\n"), offs = [], o = 0, i;
+    lines.forEach(function(l){ offs.push(o); o += l.length + 1; });
+    for (i = lines.length - 1; i >= 0 && i >= lines.length - 6; i--) {
+      var l = lines[i].replace(/^[\s•*\-–\d.)]+/, "").replace(/[:\s]+$/, "");
+      if (l && l.length <= 40 && /^[A-Za-z][A-Za-z0-9 &'()\-\/]*$/.test(l) && !/^(?:use|with|make|fasten|stuff|begin|change|start|continue|note|work|sew|attach|repeat|join)\b/i.test(l)) {
+        var pre = lines.slice(i + 1).filter(function(x){ return /yarn|colou?r|\buse\b|\bwith\b/i.test(x); }).join(" ");
+        return { at: offs[i], pre: pre, name: l };
+      }
+    }
+    return { at: body.length, pre: "", name: "" };
   }
   function parsePattern(text){
-    var re = /(?:\bRow\s*(\d+)|\b(\d+)\s*(?:st|nd|rd|th)\s*Row)\b\s*[.:)\-]?/gi, hits = [], m;
-    while ((m = re.exec(text)) !== null) hits.push({ i: m.index, e: re.lastIndex, n: parseInt(m[1] || m[2], 10) });
-    var rows = {}, order = [];
-    hits.forEach(function(h, idx){
-      var body = text.slice(h.e, idx + 1 < hits.length ? hits[idx + 1].i : text.length);
-      var side = "";
-      var sm = body.match(/^\s*\((rs|ws)\)\s*[.:\-]?/i);
-      if (sm) { side = sm[1].toUpperCase(); body = body.slice(sm[0].length); }
-      body = body.replace(/[.\s]+$/, "");
-      var segs = splitTop(body).map(function(t){ var c = countStitches(t); return { text: t, st: c.st, ch: c.ch }; });
-      if (!(h.n in rows)) order.push(h.n);
-      rows[h.n] = { n: h.n, side: side, segs: segs };
+    text = text.replace(/\r/g, "").replace(/\b(colou?rs?)\s+([A-Za-z])(?![A-Za-z])/gi, function(a, c, l){ return c + " " + l.toUpperCase(); });
+    var re = /(^|\n|[.!?:)\]]\s*)[ \t]*(?:[•*\-–]\s*)?(?:\d+[.)]\s+)?(?:\*\*)?(?:(?:Rows?|Rnds?|Rounds?|R)\s*(\d+)(?:\s*(?:-|–|—|to|&|and)\s*(\d+))?|(\d+)(?:st|nd|rd|th)\s+(?:Row|Rnd|Round))\b(?:\*\*)?[ \t]*[:.\-–)=]?/gi;
+    var hits = [], m;
+    while ((m = re.exec(text)) !== null) hits.push({ s: m.index + m[1].length, e: re.lastIndex, a: parseInt(m[2] || m[4], 10), b: m[3] ? parseInt(m[3], 10) : null, rnd: /rnd|round/i.test(m[0]) });
+    var raws = hits.map(function(h, i){ return text.slice(h.e, i + 1 < hits.length ? hits[i + 1].s : text.length); });
+    var pre = [], names = [], restart = [], last = 0;
+    hits.forEach(function(h, i){
+      restart[i] = i === 0 || h.a <= last; last = h.b || h.a; pre[i] = ""; names[i] = "";
+      if (restart[i]) {
+        var src = i === 0 ? text.slice(0, h.s) : raws[i - 1], cut = headingCut(src);
+        names[i] = cut.name; pre[i] = cut.pre;
+        if (i > 0) raws[i - 1] = src.slice(0, cut.at);
+      }
     });
-    return { rows: rows, order: order };
+    var parts = [], part = null, prevTotal = 0;
+    hits.forEach(function(h, i){
+      if (restart[i]) { part = { name: names[i] || "Part " + (parts.length + 1), rows: {}, order: [] }; parts.push(part); prevTotal = 0; }
+      var body = raws[i].replace(/\s+/g, " ").trim(), side = "";
+      var sm = body.match(/^(?:\(\s*(rs|ws)\s*\)|(rs|ws)\s*[:.\-])\s*[.:\-]?\s*/i);
+      if (sm) { side = (sm[1] || sm[2]).toUpperCase(); body = body.slice(sm[0].length); }
+      body = body.replace(/^[.:\-=\s]+/, "");
+      var from = h.a, to = h.b && h.b >= h.a ? h.b : h.a;
+      var rp = body.match(/^(.*?)\brepeat\s+rows?\s+(\d+)(?:\s*(?:&|and|-|–|to)\s*(\d+))?\s*\.?\s*$/i);
+      var lead = rp ? rp[1].replace(/[\s,\[\]]+$/, "").replace(/^\[/, "") : "";
+      var ts = takeStated(rp ? "" : body), pt = pre[i] ? pre[i].replace(/\s+/g, " ").trim() : "";
+      body = rp ? lead : expandRepeats(ts.body, ts.stated, prevTotal);
+      var mk = function(t){ var c = countSeg(t); return { text: t, st: c.st, ch: c.ch, open: c.open, fac: c.fac }; };
+      var segs = splitTop((pt ? pt + ", " : "") + body.replace(/[.\s]+$/, "")).map(mk);
+      var known = 0, opens = [];
+      segs.forEach(function(g){ if (g.open) opens.push(g); else known += g.st; });
+      if (opens.length && (ts.stated != null || prevTotal)) {
+        opens.forEach(function(g, j){
+          if (j > 0) g.st = 0;
+          else if (ts.stated != null) g.st = Math.max(0, ts.stated - known);
+          else g.st = Math.max(0, Math.round((prevTotal - known) * g.fac));
+        });
+      }
+      for (var n = from; n <= to && n < from + 400; n++) {
+        var rs = segs;
+        if (rp) {
+          var src = part.rows[parseInt(rp[2], 10) + (n - from)];
+          if (src) rs = segs.concat(src.segs);
+        }
+        var total = rs.reduce(function(a, g){ return a + g.st; }, 0);
+        if (!(n in part.rows)) part.order.push(n);
+        part.rows[n] = { n: n, side: side, label: h.rnd ? "Rnd" : "Row", segs: rs, stated: rp ? null : ts.stated, total: total };
+        prevTotal = total;
+      }
+    });
+    return { parts: parts, rows: parts[0] ? parts[0].rows : {}, order: parts[0] ? parts[0].order : [] };
+  }
+  function applyPart(P, i){
+    var p = P.parts[i] || P.parts[0];
+    P.rows = p ? p.rows : {}; P.order = p ? p.order : [];
   }
   function segCount(seg, countCh){ return seg.st + (countCh ? seg.ch : 0); }
   function rowTotal(row, countCh){ return row.segs.reduce(function(a, g){ return a + segCount(g, countCh); }, 0); }
@@ -285,21 +399,25 @@ textarea.short{min-height:90px}
   }
   function colourPieces(text, cm){
     var out = [];
-    if (!cm) { var c0 = countStitches(text); return [{ col: -1, st: c0.st, ch: c0.ch }]; }
+    if (!cm) { var c0 = countSeg(text); return [{ col: -1, st: c0.st, ch: c0.ch }]; }
     var re = new RegExp(cm.re, "gi"), m, hits = [];
     while ((m = re.exec(text)) !== null) {
       var b = text.charAt(m.index - 1), a = text.charAt(m.index + m[0].length);
       if (/[A-Za-z]/.test(b) || /[A-Za-z]/.test(a)) { re.lastIndex = m.index + 1; continue; }
       if (/(?:break|breaking|fasten)\s+off[^,.]*$/i.test(text.slice(0, m.index)) && !/rejoin/i.test(text.slice(m.index + m[0].length))) continue;
+      if (m[0].replace(/\s+/g, "").length === 1) {
+        if (m[0] !== m[0].toUpperCase() || /^\s+[a-z]{2,}/.test(text.slice(m.index + 1))) continue;
+        if (text.charAt(m.index - 1) && !/[\s(,;:\[]/.test(text.charAt(m.index - 1))) continue;
+      }
       hits.push({ i: m.index, k: cm.keys[m[0].replace(/\s+/g, "").toLowerCase()] });
     }
     var start = 0, col = -1;
     hits.forEach(function(h){
-      var c = countStitches(text.slice(start, h.i));
-      out.push({ col: col, st: c.st, ch: c.ch });
+      var seg = text.slice(start, h.i), c = countSeg(seg);
+      out.push({ col: /\bin\s*$/i.test(seg) && c.st + c.ch > 0 ? h.k : col, st: c.st, ch: c.ch });
       start = h.i; col = h.k;
     });
-    var last = countStitches(text.slice(start));
+    var last = countSeg(text.slice(start));
     out.push({ col: col, st: last.st, ch: last.ch });
     return out;
   }
@@ -334,13 +452,13 @@ textarea.short{min-height:90px}
     return (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? "#1B1B1B" : "#FFFFFF";
   }
   function detectColours(text){
-    var STOP = { row:1, using:1, turn:1, ch:1, rs:1, ws:1, then:1, and:1, repeat:1, join:1, work:1, make:1, skip:1, into:1, in:1, new:1, ball:1, of:1, with:1, a:1, the:1, change:1, to:1, switch:1 };
+    var STOP = { row:1, using:1, turn:1, ch:1, rs:1, ws:1, then:1, and:1, repeat:1, join:1, work:1, make:1, skip:1, into:1, in:1, new:1, ball:1, of:1, with:1, a:1, the:1, change:1, to:1, switch:1, same:1, another:1, contrasting:1, main:1, your:1, an:1 };
     var found = [], seen = {};
     function push(words){
-      while (words.length && STOP[words[0].toLowerCase()]) words.shift();
-      while (words.length && STOP[words[words.length - 1].toLowerCase()]) words.pop();
+      while (words.length && STOP[words[0].toLowerCase()] && !/^[A-Z]$/.test(words[0])) words.shift();
+      while (words.length && STOP[words[words.length - 1].toLowerCase()] && !/^[A-Z]$/.test(words[words.length - 1])) words.pop();
       var n = words.join(" "), k = n.replace(/\s+/g, "").toLowerCase();
-      if (!k || seen[k] || STOP[k]) return;
+      if (!k || seen[k] || (STOP[k] && !/^[A-Z]$/.test(n))) return;
       seen[k] = 1; found.push(n);
     }
     var m, re1 = /\b(?:using|bring in(?:\s+(?:a\s+)?new\s+ball\s+of)?|join(?:\s+in)?|change to|switch to|with)\s+([A-Za-z]+(?:\s+[A-Za-z]+){0,2})/gi;
@@ -351,10 +469,15 @@ textarea.short{min-height:90px}
     }
     var re2 = /([A-Z][A-Za-z]*(?:\s+[A-Z][A-Za-z]*)*)\s+\d*\s*(?:htr|dtr|tr|dc|sc|ch)\b/g;
     while ((m = re2.exec(text)) !== null) push(m[1].split(/\s+/));
+    var norm = text.replace(/\b(colou?rs?)\s+([A-Za-z])(?![A-Za-z])/gi, function(a, c, l){ return c + " " + l.toUpperCase(); });
+    var re3 = /\b(?:use|using|with|change to|switch to|begin in|start with|join)\s+((?:[a-z]+\s+){0,2}[a-z]+)\s+yarn\b/gi;
+    while ((m = re3.exec(norm)) !== null) push(m[1].split(/\s+/));
+    var re4 = /[Cc]olou?r\s+([A-Z])(?![A-Za-z])|(?:^|[\s,;(])([A-Z])\s*\(\s*\d+\s*\)|\b(?:sc|dc|hdc|htr|tr)\s+\d+\s+in\s+([A-Z])(?![A-Za-z])/g;
+    while ((m = re4.exec(norm)) !== null) push([m[1] || m[2] || m[3]]);
     return found;
   }
-  function buildChart(P, cols, countCh, left){
-    var cm = colourMatcher(cols), cur = -1, out = [], prevRev = null, prevTurn = false, turns = 0;
+  function buildChart(P, cols, countCh, left, startWS){
+    var cm = colourMatcher(cols), cur = -1, out = [], prevWs = null, prevTurn = false, turns = 0;
     P.order.slice().sort(function(a, b){ return a - b; }).forEach(function(n){
       var row = P.rows[n], cells = [];
       row.segs.forEach(function(g){
@@ -366,9 +489,9 @@ textarea.short{min-height:90px}
       });
       var rowText = row.segs.map(function(g){ return g.text; }).join(", "), ch = rowText.match(/changing\s+to\s+([A-Za-z ]+?)\s+on\s+(?:the\s+)?(?:last|final)\s+st/i);
       if (ch && cm && cells.length) { var key = ch[1].replace(/\s+/g, "").toLowerCase(); if (key in cm.keys) cells[cells.length - 1] = cm.keys[key]; }
-      var base = row.side === "RS" ? true : row.side === "WS" ? false : (prevRev === null ? false : (prevTurn ? !prevRev : prevRev));
-      prevRev = base; prevTurn = /\bturn\b/i.test(rowText);
-      out.push({ n: n, cells: cells, rev: base !== !!left, turns: turns });
+      var ws = row.side === "WS" ? true : row.side === "RS" ? false : (prevWs === null ? !!startWS : (prevTurn ? !prevWs : prevWs));
+      prevWs = ws; prevTurn = /\bturn\b/i.test(rowText);
+      out.push({ n: n, cells: cells, rev: (!ws) !== !!left, ws: ws, turns: turns });
       if (prevTurn) turns++;
     });
     var first = -1;
@@ -378,7 +501,13 @@ textarea.short{min-height:90px}
   }
   // PARSE-END
 
-  var parsed = parsePattern(s.pattern);
+  var parsed = null;
+  function reparse(){
+    reparse();
+    if (!(s.part >= 0 && s.part < parsed.parts.length)) s.part = 0;
+    applyPart(parsed, s.part);
+  }
+  reparse();
 
   function curColour(){
     if (!s.pattern.trim() || !Array.isArray(s.colours)) return null;
@@ -439,7 +568,7 @@ textarea.short{min-height:90px}
     while (body.firstChild) body.removeChild(body.firstChild);
     var row = currentRow();
     if (!row) { track("r" + s.rows + "none"); $("nowhead").textContent = "Row " + s.rows; add(body, "nowmain", "No instructions found for this row"); $("nowthen").textContent = ""; return; }
-    setHead("Row " + row.n + (row.side ? " (" + row.side + ")" : ""), curColour());
+    setHead((parsed.parts.length > 1 ? parsed.parts[s.part].name + " · " : "") + (row.label || "Row") + " " + row.n + (row.side ? " (" + row.side + ")" : ""), curColour());
     var w = whereAmI(row, s.stitches, s.countCh); var ccol = curColour();
     track("r" + row.n + "|" + (w.finished ? "done" : w.idx) + "|" + (ccol ? ccol.hex : ""));
     if (w.finished) {
@@ -522,16 +651,17 @@ textarea.short{min-height:90px}
     st.textContent = "Found " + parsed.order.length + " row" + (parsed.order.length === 1 ? "" : "s") + ". Check the stitch totals look right:";
     list.hidden = false;
     parsed.order.slice().sort(function(a, b){ return a - b; }).forEach(function(n){
-      add(list, "", "Row " + n + ": " + rowTotal(parsed.rows[n], s.countCh) + " stitches");
+      var rw = parsed.rows[n], tot = rowTotal(rw, s.countCh);
+      add(list, "", (rw.label || "Row") + " " + n + ": " + tot + " stitches" + (rw.stated != null && rw.stated !== tot ? " – pattern says " + rw.stated + ", please check" : ""));
     });
   }
   $("openPanel").addEventListener("click", function(){
     $("pattern").value = s.pattern; $("countCh").checked = !!s.countCh;
-    renderPatternStatus(); renderColours(); $("tintBtn").checked = !!s.tintBtn; $("chartBtn").checked = !!s.chartBtn; $("flipOnTurn").checked = !!s.flipOnTurn; $("alertFlash").checked = !!s.alertFlash; $("alertSound").checked = !!s.alertSound; $("leftHanded").checked = !!s.leftHanded; $("panel").hidden = false; $("panel").scrollTop = 0;
+    renderParts(); renderPatternStatus(); renderColours(); $("tintBtn").checked = !!s.tintBtn; $("chartBtn").checked = !!s.chartBtn; $("flipOnTurn").checked = !!s.flipOnTurn; $("startWS").checked = !!s.startWS; $("alertFlash").checked = !!s.alertFlash; $("alertSound").checked = !!s.alertSound; $("leftHanded").checked = !!s.leftHanded; $("panel").hidden = false; $("panel").scrollTop = 0;
   });
   $("closePanel").addEventListener("click", function(){ $("panel").hidden = true; render(); });
   $("pattern").addEventListener("input", function(e){
-    s.pattern = e.target.value; parsed = parsePattern(s.pattern); renderPatternStatus(); save();
+    s.pattern = e.target.value; reparse(); renderParts(); renderPatternStatus(); save();
   });
   $("countCh").addEventListener("change", function(e){ s.countCh = e.target.checked; renderPatternStatus(); save(); });
 
@@ -567,6 +697,7 @@ textarea.short{min-height:90px}
   $("tintBtn").addEventListener("change", function(e){ s.tintBtn = e.target.checked; save(); });
   $("chartBtn").addEventListener("change", function(e){ s.chartBtn = e.target.checked; save(); });
   $("flipOnTurn").addEventListener("change", function(e){ s.flipOnTurn = e.target.checked; save(); });
+  $("startWS").addEventListener("change", function(e){ s.startWS = e.target.checked; save(); });
   $("alertFlash").addEventListener("change", function(e){ s.alertFlash = e.target.checked; save(); if (s.alertFlash) { var b = $("closePanel"); b.classList.remove("flash"); void b.offsetWidth; b.classList.add("flash"); setTimeout(function(){ b.classList.remove("flash"); }, 900); } });
   $("alertSound").addEventListener("change", function(e){ s.alertSound = e.target.checked; save(); if (s.alertSound) beep(); });
   $("leftHanded").addEventListener("change", function(e){ s.leftHanded = e.target.checked; save(); });
@@ -577,9 +708,9 @@ textarea.short{min-height:90px}
   var chartCache = { key: null, val: null };
   function getChartData(){
     var cols = usableColours();
-    var key = s.pattern + "|" + JSON.stringify(cols) + "|" + s.countCh + "|" + s.leftHanded;
+    var key = s.pattern + "|" + s.part + "|" + JSON.stringify(cols) + "|" + s.countCh + "|" + s.leftHanded + "|" + s.startWS;
     if (chartCache.key !== key) {
-      var dd = buildChart(parsed, cols, s.countCh, s.leftHanded), ml = 1;
+      var dd = buildChart(parsed, cols, s.countCh, s.leftHanded, s.startWS), ml = 1;
       dd.forEach(function(r){ if (r.cells.length > ml) ml = r.cells.length; });
       chartCache = { key: key, val: { cols: cols, data: dd, maxLen: ml } };
     }
@@ -590,7 +721,7 @@ textarea.short{min-height:90px}
     if (!s.flipOnTurn) return false;
     var cur = null;
     data.forEach(function(r){ if (r.n === s.rows) cur = r; });
-    return cur ? cur.turns % 2 === 1 : false;
+    return cur ? !!cur.ws : false;
   }
   function drawMini(){
     var btn = $("stitch"), cv = $("miniChart"), sub = $("sub");
@@ -732,8 +863,23 @@ textarea.short{min-height:90px}
   });
   window.addEventListener("resize", function(){ if (!$("chartPanel").hidden) drawChart(false); drawMini(); });
 
+  function renderParts(){
+    var sel = $("partSel"), many = parsed.parts.length > 1;
+    $("partRow").hidden = !many;
+    while (sel.firstChild) sel.removeChild(sel.firstChild);
+    parsed.parts.forEach(function(p, i){ var o = document.createElement("option"); o.value = i; o.textContent = p.name; sel.appendChild(o); });
+    sel.value = s.part;
+  }
+  $("partSel").addEventListener("change", function(e){
+    s.prog[s.part] = [s.rows, s.stitches];
+    s.part = parseInt(e.target.value, 10) || 0;
+    var pr = s.prog[s.part] || [1, 0];
+    s.rows = pr[0]; s.stitches = pr[1]; s.history = [];
+    applyPart(parsed, s.part); renderPatternStatus(); render();
+  });
+
   function backupText(){
-    return JSON.stringify({ v:1, name:s.name, stitches:s.stitches, rows:s.rows, target:s.target, countCh:s.countCh, tintBtn:s.tintBtn, alertFlash:s.alertFlash, alertSound:s.alertSound, leftHanded:s.leftHanded, chartBtn:s.chartBtn, miniScale:s.miniScale, flipOnTurn:s.flipOnTurn, colours:s.colours, pattern:s.pattern });
+    return JSON.stringify({ v:1, name:s.name, stitches:s.stitches, rows:s.rows, target:s.target, countCh:s.countCh, tintBtn:s.tintBtn, alertFlash:s.alertFlash, alertSound:s.alertSound, leftHanded:s.leftHanded, chartBtn:s.chartBtn, miniScale:s.miniScale, flipOnTurn:s.flipOnTurn, startWS:s.startWS, colours:s.colours, pattern:s.pattern });
   }
   function msg(t){ $("backupStatus").textContent = t; }
   $("copyBackup").addEventListener("click", function(){
@@ -766,8 +912,9 @@ textarea.short{min-height:90px}
       if ("leftHanded" in d) s.leftHanded = !!d.leftHanded;
       if ("chartBtn" in d) s.chartBtn = !!d.chartBtn;
       if ("flipOnTurn" in d) s.flipOnTurn = !!d.flipOnTurn;
+      if ("startWS" in d) s.startWS = !!d.startWS;
       if (typeof d.miniScale === "number") s.miniScale = Math.max(0.3, Math.min(3, d.miniScale));
-      parsed = parsePattern(s.pattern);
+      reparse();
       $("pattern").value = s.pattern; $("countCh").checked = s.countCh;
       renderPatternStatus(); render(); msg("Restored. You are on row " + s.rows + ", stitch " + s.stitches + ".");
     } catch(e) { msg("That doesn’t look like a backup. Paste the whole backup text and try again."); }
