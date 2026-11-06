@@ -503,7 +503,7 @@ textarea.short{min-height:90px}
 
   var parsed = null;
   function reparse(){
-    reparse();
+    parsed = parsePattern(s.pattern);
     if (!(s.part >= 0 && s.part < parsed.parts.length)) s.part = 0;
     applyPart(parsed, s.part);
   }
