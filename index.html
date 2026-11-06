@@ -182,7 +182,7 @@ textarea.short{min-height:90px}
     <div class="status" id="colourStatus"></div>
     <label class="check"><input type="checkbox" id="tintBtn"> Colour the big button to match the yarn</label>
     <label class="check"><input type="checkbox" id="chartBtn"> Show the stitch chart on the big button instead</label>
-    <label class="check"><input type="checkbox" id="flipOnTurn"> Flip the chart to match the side I am working, changing at each turn</label>
+    <label class="check"><input type="checkbox" id="flipOnTurn"> Flip the chart at each turn so I always work left to right (right to left if left-handed)</label>
     <label class="check"><input type="checkbox" id="startWS"> My pattern starts on the wrong side (only needed if it doesn’t say (ws) or (rs))</label>
     <h2>Backup</h2>
     <p>Copy your backup into a note or message. Paste it here later to get your project back.</p>
@@ -721,7 +721,7 @@ textarea.short{min-height:90px}
     if (!s.flipOnTurn) return false;
     var cur = null;
     data.forEach(function(r){ if (r.n === s.rows) cur = r; });
-    return cur ? !!cur.ws : false;
+    return cur ? cur.rev !== !!s.leftHanded : false;
   }
   function drawMini(){
     var btn = $("stitch"), cv = $("miniChart"), sub = $("sub");
