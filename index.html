@@ -105,6 +105,11 @@ textarea.short{min-height:90px}
 .stitchwrap .stitch{flex:1}
 .finish{position:absolute;top:10px;right:10px;z-index:2;min-height:44px;padding:8px 12px;border-radius:12px;background:var(--surface);color:var(--ink);font-weight:700;font-size:.85rem;box-shadow:0 1px 5px rgba(0,0,0,.3)}
 .finish[hidden]{display:none}
+.zoombtns{position:absolute;top:10px;left:10px;z-index:2;display:flex;gap:6px}
+.zoombtns[hidden]{display:none}
+.zoombtns button{width:44px;height:44px;border-radius:12px;background:var(--surface);color:var(--ink);font-size:1.5rem;font-weight:800;line-height:1;box-shadow:0 1px 5px rgba(0,0,0,.3)}
+.zoombtns button:active{transform:scale(.95)}
+.stitch.chartmode{touch-action:none}
 .finish:active{transform:scale(.97)}
 .now.flash{animation:nowflash .9s ease-out}
 @keyframes nowflash{0%{box-shadow:0 0 0 7px var(--row);transform:scale(1.025)}100%{box-shadow:0 0 0 0 transparent;transform:none}}
@@ -138,6 +143,10 @@ textarea.short{min-height:90px}
       <span class="sub" id="sub">Tap to add a stitch</span>
     </button>
     <button class="finish" id="finish" hidden>Finish step</button>
+    <div class="zoombtns" id="zoomBtns" hidden>
+      <button id="miniOut" aria-label="Zoom the chart out">−</button>
+      <button id="miniIn" aria-label="Zoom the chart in">+</button>
+    </div>
   </div>
   <div class="bar">
     <button class="small" id="minus" aria-label="Remove a stitch">− Stitch</button>
@@ -172,6 +181,7 @@ textarea.short{min-height:90px}
     <div class="status" id="colourStatus"></div>
     <label class="check"><input type="checkbox" id="tintBtn"> Colour the big button to match the yarn</label>
     <label class="check"><input type="checkbox" id="chartBtn"> Show the stitch chart on the big button instead</label>
+    <label class="check"><input type="checkbox" id="flipChart"> Flip the chart when I turn the work, so each row runs the way my hook moves</label>
     <h2>Backup</h2>
     <p>Copy your backup into a note or message. Paste it here later to get your project back.</p>
     <div class="btns">
@@ -197,7 +207,7 @@ textarea.short{min-height:90px}
 <script>
 (function(){
   var KEY = "crochet-counter-v1";
-  var s = { name:"", stitches:0, rows:1, target:0, history:[], pattern:"", countCh:false, colours:[], tintBtn:true, alertFlash:true, alertSound:true, leftHanded:false, chartBtn:false };
+  var s = { name:"", stitches:0, rows:1, target:0, history:[], pattern:"", countCh:false, colours:[], tintBtn:true, alertFlash:true, alertSound:true, leftHanded:false, chartBtn:false, miniScale:1, flipChart:false };
   var $ = function(id){ return document.getElementById(id); };
 
   try {
@@ -469,7 +479,7 @@ textarea.short{min-height:90px}
     save();
   }
 
-  $("stitch").addEventListener("click", function(){ snap(); s.stitches++; allowAlert = true; render(); allowAlert = false; });
+  $("stitch").addEventListener("click", function(){ if (Date.now() - pinchAt < 500) return; snap(); s.stitches++; allowAlert = true; render(); allowAlert = false; });
   $("minus").addEventListener("click", function(){ if (s.stitches > 0) { snap(); s.stitches--; render(); } });
   $("next").addEventListener("click", function(){ snap(); s.rows++; s.stitches = 0; allowAlert = true; render(); allowAlert = false; });
   $("finish").addEventListener("click", function(){
@@ -516,7 +526,7 @@ textarea.short{min-height:90px}
   }
   $("openPanel").addEventListener("click", function(){
     $("pattern").value = s.pattern; $("countCh").checked = !!s.countCh;
-    renderPatternStatus(); renderColours(); $("tintBtn").checked = !!s.tintBtn; $("chartBtn").checked = !!s.chartBtn; $("alertFlash").checked = !!s.alertFlash; $("alertSound").checked = !!s.alertSound; $("leftHanded").checked = !!s.leftHanded; $("panel").hidden = false; $("panel").scrollTop = 0;
+    renderPatternStatus(); renderColours(); $("tintBtn").checked = !!s.tintBtn; $("chartBtn").checked = !!s.chartBtn; $("flipChart").checked = !!s.flipChart; $("alertFlash").checked = !!s.alertFlash; $("alertSound").checked = !!s.alertSound; $("leftHanded").checked = !!s.leftHanded; $("panel").hidden = false; $("panel").scrollTop = 0;
   });
   $("closePanel").addEventListener("click", function(){ $("panel").hidden = true; render(); });
   $("pattern").addEventListener("input", function(e){
@@ -555,6 +565,7 @@ textarea.short{min-height:90px}
   });
   $("tintBtn").addEventListener("change", function(e){ s.tintBtn = e.target.checked; save(); });
   $("chartBtn").addEventListener("change", function(e){ s.chartBtn = e.target.checked; save(); });
+  $("flipChart").addEventListener("change", function(e){ s.flipChart = e.target.checked; save(); });
   $("alertFlash").addEventListener("change", function(e){ s.alertFlash = e.target.checked; save(); if (s.alertFlash) { var b = $("closePanel"); b.classList.remove("flash"); void b.offsetWidth; b.classList.add("flash"); setTimeout(function(){ b.classList.remove("flash"); }, 900); } });
   $("alertSound").addEventListener("change", function(e){ s.alertSound = e.target.checked; save(); if (s.alertSound) beep(); });
   $("leftHanded").addEventListener("change", function(e){ s.leftHanded = e.target.checked; save(); });
@@ -566,15 +577,25 @@ textarea.short{min-height:90px}
   function getChartData(){
     var cols = usableColours();
     var key = s.pattern + "|" + JSON.stringify(cols) + "|" + s.countCh + "|" + s.leftHanded;
-    if (chartCache.key !== key) chartCache = { key: key, val: { cols: cols, data: buildChart(parsed, cols, s.countCh, s.leftHanded) } };
+    if (chartCache.key !== key) {
+      var dd = buildChart(parsed, cols, s.countCh, s.leftHanded), ml = 1;
+      dd.forEach(function(r){ if (r.cells.length > ml) ml = r.cells.length; });
+      chartCache = { key: key, val: { cols: cols, data: dd, maxLen: ml } };
+    }
     return chartCache.val;
   }
   function chartModeOn(){ return !!s.chartBtn && getChartData().data.length > 0; }
+  function chartMirror(data){
+    if (!s.flipChart) return false;
+    var cur = null;
+    data.forEach(function(r){ if (r.n === s.rows) cur = r; });
+    return cur ? cur.rev !== !s.leftHanded : false;
+  }
   function drawMini(){
     var btn = $("stitch"), cv = $("miniChart"), sub = $("sub");
-    var cd = getChartData(), data = cd.data, cols = cd.cols;
+    var cd = getChartData(), data = cd.data, cols = cd.cols, M = chartMirror(data), ML = cd.maxLen;
     var on = !!s.chartBtn && data.length > 0;
-    btn.classList.toggle("chartmode", on); cv.hidden = !on;
+    btn.classList.toggle("chartmode", on); cv.hidden = !on; $("zoomBtns").hidden = !on;
     var base = sub.textContent.replace(/^[\u2192\u2190] /, "");
     if (!on) { sub.textContent = base; return; }
     var w = btn.clientWidth, h = btn.clientHeight;
@@ -583,12 +604,14 @@ textarea.short{min-height:90px}
     data.forEach(function(r, i){ if (r.n === s.rows) ri = i; });
     if (ri < 0) { data.forEach(function(r, i){ if (r.n < s.rows) ri = i; }); if (ri < 0) ri = 0; }
     var cur = data[ri], len = cur.cells.length, k = Math.min(s.stitches, Math.max(0, len - 1));
-    sub.textContent = (cur.rev ? "\u2190 " : "\u2192 ") + base;
+    sub.textContent = ((cur.rev !== M) ? "\u2190 " : "\u2192 ") + base;
     var dpr = Math.min(2, window.devicePixelRatio || 1);
     cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
     var g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
-    var gutter = 26, gap = 1, cs = Math.max(12, Math.min(30, Math.floor((w - gutter) / 15) - gap));
-    var cx = (cur.rev ? len - 1 - k : k) * (cs + gap) + cs / 2, cy = (data.length - 1 - ri) * (cs + gap) + cs / 2;
+    var gutter = 26, gap = 1, auto = Math.max(12, Math.min(30, Math.floor((w - gutter) / 15) - gap));
+    var cs = Math.max(4, Math.min(48, Math.round(auto * (s.miniScale || 1))));
+    var cxi = cur.rev ? len - 1 - k : k; if (M) cxi = ML - 1 - cxi;
+    var cx = cxi * (cs + gap) + cs / 2, cy = (data.length - 1 - ri) * (cs + gap) + cs / 2;
     var ox = gutter + (w - gutter) / 2 - cx, oy = h / 2 - cy;
     var rs = getComputedStyle(document.documentElement);
     var ink = rs.getPropertyValue("--ink").trim() || "#222", muted = rs.getPropertyValue("--muted").trim() || "#777";
@@ -598,7 +621,8 @@ textarea.short{min-height:90px}
       if (y > h || y + cs < 0) return;
       var n = r.cells.length, isCur = rj === ri;
       r.cells.forEach(function(ci, kk){
-        var xi = r.rev ? n - 1 - kk : kk, x = ox + xi * (cs + gap);
+        var xi = r.rev ? n - 1 - kk : kk; if (M) xi = ML - 1 - xi;
+        var x = ox + xi * (cs + gap);
         if (x > w || x + cs < gutter) return;
         var hex = ci >= 0 && cols[ci] ? cols[ci].hex : "#8A8F99";
         var done = r.n < s.rows || (r.n === s.rows && kk < s.stitches);
@@ -614,14 +638,28 @@ textarea.short{min-height:90px}
     data.forEach(function(r, rj){
       var y = (data.length - 1 - rj) * (cs + gap) + oy;
       if (y > h || y + cs < 0) return;
+      if (cs < 11 && rj !== ri && r.n % 5 !== 0) return;
       g.fillStyle = rj === ri ? ink : muted; g.fillText(String(r.n), gutter - 5, y + cs / 2);
     });
   }
+  var pinchAt = 0, pinch = null, stitchBtn = $("stitch");
+  function tdist(e){ var a = e.touches[0], b = e.touches[1]; return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY); }
+  function setMiniScale(v, noSave){ s.miniScale = Math.max(0.3, Math.min(3, v)); if (!noSave) save(); drawMini(); }
+  $("miniIn").addEventListener("click", function(){ setMiniScale((s.miniScale || 1) * 1.25); });
+  $("miniOut").addEventListener("click", function(){ setMiniScale((s.miniScale || 1) * 0.8); });
+  stitchBtn.addEventListener("touchstart", function(e){
+    if (e.touches.length === 2 && chartModeOn()) { pinch = { d: tdist(e), v: s.miniScale || 1 }; pinchAt = Date.now(); }
+  }, { passive: true });
+  stitchBtn.addEventListener("touchmove", function(e){
+    if (pinch && e.touches.length === 2) { e.preventDefault(); pinchAt = Date.now(); setMiniScale(pinch.v * tdist(e) / pinch.d, true); }
+  }, { passive: false });
+  stitchBtn.addEventListener("touchend", function(e){ if (pinch) { pinchAt = Date.now(); if (e.touches.length < 2) { pinch = null; save(); } } });
+  stitchBtn.addEventListener("touchcancel", function(){ pinch = null; save(); });
   var chartZoom = 0;
   function drawChart(toCurrent){
     var wrap = $("chartScroll"), cv = $("chartCanvas"), info = $("chartInfo"), leg = $("chartLegend");
     while (leg.firstChild) leg.removeChild(leg.firstChild);
-    var cd = getChartData(), cols = cd.cols, data = cd.data;
+    var cd = getChartData(), cols = cd.cols, data = cd.data, M = chartMirror(data);
     if (!data.length) { cv.hidden = true; info.textContent = "No pattern rows found yet. Tap Done, then Pattern, and paste your pattern."; return; }
     cv.hidden = false;
     var maxLen = 1, totalAll = 0, doneAll = 0, used = {};
@@ -655,7 +693,8 @@ textarea.short{min-height:90px}
       var y = (data.length - 1 - ri) * (cs + gap) + 1, isCur = r.n === s.rows, len = r.cells.length;
       if (isCur) curY = y;
       r.cells.forEach(function(ci, k){
-        var xi = r.rev ? len - 1 - k : k, x = labelW + xi * (cs + gap);
+        var xi = r.rev ? len - 1 - k : k; if (M) xi = maxLen - 1 - xi;
+        var x = labelW + xi * (cs + gap);
         var hex = ci >= 0 && cols[ci] ? cols[ci].hex : "#8A8F99";
         var done = r.n < s.rows || (isCur && k < s.stitches);
         g.globalAlpha = done ? 1 : 0.28; g.fillStyle = hex; g.fillRect(x, y, cs, cs);
@@ -666,8 +705,8 @@ textarea.short{min-height:90px}
       });
       g.globalAlpha = 1;
       if (cs >= 11 || r.n % 5 === 0 || isCur) {
-        g.fillStyle = isCur ? ink : muted; g.textAlign = r.rev ? "left" : "right";
-        g.fillText(String(r.n), r.rev ? labelW + gridW + 4 : labelW - 5, y + cs / 2);
+        g.fillStyle = isCur ? ink : muted; g.textAlign = (r.rev !== M) ? "left" : "right";
+        g.fillText(String(r.n), (r.rev !== M) ? labelW + gridW + 4 : labelW - 5, y + cs / 2);
       }
     });
     g.globalAlpha = 1;
@@ -686,7 +725,7 @@ textarea.short{min-height:90px}
   window.addEventListener("resize", function(){ if (!$("chartPanel").hidden) drawChart(false); drawMini(); });
 
   function backupText(){
-    return JSON.stringify({ v:1, name:s.name, stitches:s.stitches, rows:s.rows, target:s.target, countCh:s.countCh, tintBtn:s.tintBtn, alertFlash:s.alertFlash, alertSound:s.alertSound, leftHanded:s.leftHanded, chartBtn:s.chartBtn, colours:s.colours, pattern:s.pattern });
+    return JSON.stringify({ v:1, name:s.name, stitches:s.stitches, rows:s.rows, target:s.target, countCh:s.countCh, tintBtn:s.tintBtn, alertFlash:s.alertFlash, alertSound:s.alertSound, leftHanded:s.leftHanded, chartBtn:s.chartBtn, miniScale:s.miniScale, flipChart:s.flipChart, colours:s.colours, pattern:s.pattern });
   }
   function msg(t){ $("backupStatus").textContent = t; }
   $("copyBackup").addEventListener("click", function(){
@@ -718,6 +757,8 @@ textarea.short{min-height:90px}
       if ("alertSound" in d) s.alertSound = !!d.alertSound;
       if ("leftHanded" in d) s.leftHanded = !!d.leftHanded;
       if ("chartBtn" in d) s.chartBtn = !!d.chartBtn;
+      if ("flipChart" in d) s.flipChart = !!d.flipChart;
+      if (typeof d.miniScale === "number") s.miniScale = Math.max(0.3, Math.min(3, d.miniScale));
       parsed = parsePattern(s.pattern);
       $("pattern").value = s.pattern; $("countCh").checked = s.countCh;
       renderPatternStatus(); render(); msg("Restored. You are on row " + s.rows + ", stitch " + s.stitches + ".");
