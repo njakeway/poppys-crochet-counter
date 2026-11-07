@@ -182,8 +182,7 @@ textarea.short{min-height:90px}
     <div class="status" id="colourStatus"></div>
     <label class="check"><input type="checkbox" id="tintBtn"> Colour the big button to match the yarn</label>
     <label class="check"><input type="checkbox" id="chartBtn"> Show the stitch chart on the big button instead</label>
-    <label class="check"><input type="checkbox" id="flipOnTurn"> Flip the chart at each turn so I always work left to right (right to left if left-handed)</label>
-    <label class="check" style="flex-wrap:wrap">When it flips, <select id="flipMode" style="font:inherit;padding:8px;border-radius:10px;border:2px solid var(--line);background:var(--surface);color:var(--ink);max-width:100%"><option value="dir">keep my stitches moving the same way</option><option value="side">show the side I am working on (front or back)</option></select></label>
+    <label class="check"><input type="checkbox" id="flipOnTurn"> Show the back of the design on wrong-side rows (flips at each turn)</label>
     <label class="check"><input type="checkbox" id="startWS"> My pattern starts on the wrong side (only needed if it doesn’t say (ws) or (rs))</label>
     <h2>Backup</h2>
     <p>Copy your backup into a note or message. Paste it here later to get your project back.</p>
@@ -210,7 +209,7 @@ textarea.short{min-height:90px}
 <script>
 (function(){
   var KEY = "crochet-counter-v1";
-  var s = { name:"", stitches:0, rows:1, target:0, history:[], pattern:"", countCh:false, colours:[], tintBtn:true, alertFlash:true, alertSound:true, leftHanded:false, chartBtn:false, miniScale:1, flipOnTurn:true, part:0, prog:{}, startWS:false, flipMode:"dir" };
+  var s = { name:"", stitches:0, rows:1, target:0, history:[], pattern:"", countCh:false, colours:[], tintBtn:true, alertFlash:true, alertSound:true, leftHanded:false, chartBtn:false, miniScale:1, flipOnTurn:true, part:0, prog:{}, startWS:false };
   var $ = function(id){ return document.getElementById(id); };
 
   try {
@@ -223,7 +222,7 @@ textarea.short{min-height:90px}
   function snap(){ s.history.push({ stitches:s.stitches, rows:s.rows }); if (s.history.length > 100) s.history.shift(); }
 
   // PARSE-START
-  var TOK = "sl\\s*st|slst|ss|(?:fp|bp)?(?:sc|hdc|htr|dc|dtr|tr)(?:\\s*[2-5]\\s*tog)?|invdec|inc|dec|ch";
+  var TOK = "loop[\\s-]*sts?|bobbles?|popcorns?|puffs?|sl\\s*st|slst|ss|(?:fp|bp)?(?:sc|hdc|htr|dc|dtr|tr)(?:\\s*[2-5]\\s*tog)?|invdec|inc|dec|ch";
   var NOTCOL = /^(?:CH|SC|HDC|HTR|DC|TR|DTR|SS|INC|DEC)$/;
   function splitTop(str){
     var out = [], depth = 0, cur = "";
@@ -272,6 +271,8 @@ textarea.short{min-height:90px}
   }
   // trailing stated total such as "(24)", "(24 sts)" or "[24]"
   function takeStated(body){
+    var tt = body.match(/[.!]\s*(\d+)\s*(?:dc|htr|hdc|tr|sc|sts?|stitches)\s*\.?\s*$/i);
+    if (tt && !/[(\[]\s*\d+\s*[)\]]\s*$/.test(body)) return { body: body.slice(0, tt.index).replace(/\s+$/, ""), stated: parseInt(tt[1], 10) };
     var re = /[(\[]\s*(\d+)\s*(?:sts?|stitches)?\s*[)\]]/g, m, hit = null;
     while ((m = re.exec(body)) !== null) {
       var after = body.slice(m.index + m[0].length), before = body.slice(0, m.index).replace(/\s+$/, "");
@@ -286,6 +287,9 @@ textarea.short{min-height:90px}
   }
   // "(sc, inc) x 6", "[sc, dec] repeat 3 times", "(sc, inc) around", "inc x 6"
   function expandRepeats(body, stated, prev){
+    body = body.replace(/\*\s*([^*]+?)\s*,?\s*rep(?:eat)?\s+from\s+\*\s*(?:to\s+end|across|to\s+last\s+[^,.]*)/gi, "($1) around")
+      .replace(/\*\s*([^*]+?)\s*,?\s*rep(?:eat)?\s+from\s+\*\s*(\d+)\s*more\s*times?/gi, function(a, i, n){ return "(" + i + ") x " + (parseInt(n, 10) + 1); })
+      .replace(/\*\s*([^*]+?)\s*,?\s*rep(?:eat)?\s+from\s+\*\s*(\d+)\s*times?/gi, "($1) x $2");
     var re = /[(\[]([^()\[\]]*)[)\]]\s*(?:,\s*)?(?:(?:x|×)\s*(\d+)|(?:repeat\s+)?(\d+)\s*times?|(?:repeat\s+)?(around|across|to\s+end))/i;
     for (var guard = 0; guard < 60; guard++) {
       var m = re.exec(body); if (!m) break;
@@ -307,6 +311,11 @@ textarea.short{min-height:90px}
   function headingCut(body){
     var lines = body.split("\n"), offs = [], o = 0, i;
     lines.forEach(function(l){ offs.push(o); o += l.length + 1; });
+    for (i = lines.length - 1; i >= 0 && i >= lines.length - 10; i--) {
+      var cap = lines[i].trim();
+      if (/^[A-Z][A-Z0-9 &'\-\/]{2,30}$/.test(cap) && !/^(?:WEEK|PATTERN|NOTES?|KEY|SIZE|FASTEN OFF)\b/.test(cap))
+        return { at: offs[i], pre: lines.slice(i + 1).filter(function(x){ return /yarn|colou?r|\buse\b|\bwith\b/i.test(x); }).join(" "), name: cap };
+    }
     for (i = lines.length - 1; i >= 0 && i >= lines.length - 6; i--) {
       var l = lines[i].replace(/^[\s•*\-–\d.)]+/, "").replace(/[:\s]+$/, "");
       if (l && l.length <= 40 && /^[A-Za-z][A-Za-z0-9 &'()\-\/]*$/.test(l) && !/^(?:use|with|make|fasten|stuff|begin|change|start|continue|note|work|sew|attach|repeat|join)\b/i.test(l)) {
@@ -317,10 +326,12 @@ textarea.short{min-height:90px}
     return { at: body.length, pre: "", name: "" };
   }
   function parsePattern(text){
-    text = text.replace(/\r/g, "").replace(/\b(colou?rs?)\s+([A-Za-z])(?![A-Za-z])/gi, function(a, c, l){ return c + " " + l.toUpperCase(); });
-    var re = /(^|\n|[.!?:)\]]\s*)[ \t]*(?:[•*\-–]\s*)?(?:\d+[.)]\s+)?(?:\*\*)?(?:(?:Rows?|Rnds?|Rounds?|R)\s*(\d+)(?:\s*(?:-|–|—|to|&|and)\s*(\d+))?|(\d+)(?:st|nd|rd|th)\s+(?:Row|Rnd|Round))\b(?:\*\*)?[ \t]*[:.\-–)=]?/gi;
+    text = text.replace(/\r/g, "").replace(/\f/g, "\n").replace(/\b(colou?rs?)\s+([A-Za-z])(?![A-Za-z])/gi, function(a, c, l){ return c + " " + l.toUpperCase(); });
+    var re = /(^|\n|[.!?:)\]]\s*)[ \t]*(?:[•*\-–]\s*)?(?:\d+[.)]\s+)?(?:\*\*)?(?:(?:Rows?|Rnds?|Rounds?|R)\s*(\d+)(?:\s*(?:-|–|—|to|&|and)\s*(\d+))?|(\d+)(?:st|nd|rd|th)(?:\s*(?:-|–|—|to)\s*(\d+)(?:st|nd|rd|th))?\s+(?:Rows?|Rnds?|Rounds?))\b(?:\*\*)?[ \t]*[:.\-–)=]?/gi;
+    var clones = [];
+    text = text.replace(/(?:^|\n)[ \t]*([A-Z][A-Za-z0-9 ]{1,30}?)[ \t]*\n[ \t]*Work as given for ([A-Za-z0-9 ]+?),?\s+using\s+([\s\S]+?)\.[ \t]*(?=\n|$)/g, function(m0, nm, ref, rest){ clones.push({ name: nm.trim(), ref: ref.trim().toLowerCase(), rest: rest.replace(/\s+/g, " ") }); return "\n"; });
     var hits = [], m;
-    while ((m = re.exec(text)) !== null) hits.push({ s: m.index + m[1].length, e: re.lastIndex, a: parseInt(m[2] || m[4], 10), b: m[3] ? parseInt(m[3], 10) : null, rnd: /rnd|round/i.test(m[0]) });
+    while ((m = re.exec(text)) !== null) hits.push({ s: m.index + m[1].length, e: re.lastIndex, a: parseInt(m[2] || m[4], 10), b: (m[3] || m[5]) ? parseInt(m[3] || m[5], 10) : null, rnd: /rnd|round/i.test(m[0]) });
     var raws = hits.map(function(h, i){ return text.slice(h.e, i + 1 < hits.length ? hits[i + 1].s : text.length); });
     var pre = [], names = [], restart = [], last = 0;
     hits.forEach(function(h, i){
@@ -331,6 +342,7 @@ textarea.short{min-height:90px}
         if (i > 0) raws[i - 1] = src.slice(0, cut.at);
       }
     });
+    raws = raws.map(function(r){ var k = r.search(/\n[ \t]*\n[ \t]*[A-Z][A-Z0-9 '’&\-]{3,40}[ \t]*\n/); return k >= 0 ? r.slice(0, k) : r; });
     var parts = [], part = null, prevTotal = 0;
     hits.forEach(function(h, i){
       if (restart[i]) { part = { name: names[i] || "Part " + (parts.length + 1), rows: {}, order: [] }; parts.push(part); prevTotal = 0; }
@@ -339,12 +351,14 @@ textarea.short{min-height:90px}
       if (sm) { side = (sm[1] || sm[2]).toUpperCase(); body = body.slice(sm[0].length); }
       body = body.replace(/^[.:\-=\s]+/, "");
       var from = h.a, to = h.b && h.b >= h.a ? h.b : h.a;
-      var rp = body.match(/^(.*?)\brepeat\s+rows?\s+(\d+)(?:\s*(?:&|and|-|–|to)\s*(\d+))?\s*\.?\s*$/i);
+      var rp = body.match(/^(.{0,60}?)\b(?:repeat\s+rows?|as\s+(?:for\s+)?(?:the\s+)?)\s*(\d+)(?:st|nd|rd|th)?(?:\s*(?:&|and|-|–|to)\s*(\d+)(?:st|nd|rd|th)?)?(?:\s+(?:rows?|rnds?|rounds?))?\s*(?:\.|$)/i);
       var lead = rp ? rp[1].replace(/[\s,\[\]]+$/, "").replace(/^\[/, "") : "";
       var ts = takeStated(rp ? "" : body), pt = pre[i] ? pre[i].replace(/\s+/g, " ").trim() : "";
       body = rp ? lead : expandRepeats(ts.body, ts.stated, prevTotal);
       var mk = function(t){ var c = countSeg(t); return { text: t, st: c.st, ch: c.ch, open: c.open, fac: c.fac }; };
       var segs = splitTop((pt ? pt + ", " : "") + body.replace(/[.\s]+$/, "")).map(mk);
+      if (/\bfollow\b[^.]*\b(?:graph|chart)\b/i.test(raws[i]) && !segs.some(function(g){ return g.st > 0; }))
+        segs = [{ text: raws[i].replace(/\s+/g, " ").trim(), st: ts.stated != null ? ts.stated : prevTotal, ch: 0, open: false, fac: 1 }];
       var known = 0, opens = [];
       segs.forEach(function(g){ if (g.open) opens.push(g); else known += g.st; });
       if (opens.length && (ts.stated != null || prevTotal)) {
@@ -357,7 +371,7 @@ textarea.short{min-height:90px}
       for (var n = from; n <= to && n < from + 400; n++) {
         var rs = segs;
         if (rp) {
-          var src = part.rows[parseInt(rp[2], 10) + (n - from)];
+          var src = part.rows[parseInt(rp[2], 10) + (rp[3] ? n - from : 0)];
           if (src) rs = segs.concat(src.segs);
         }
         var total = rs.reduce(function(a, g){ return a + g.st; }, 0);
@@ -366,6 +380,22 @@ textarea.short{min-height:90px}
         prevTotal = total;
       }
     });
+    clones.forEach(function(c){
+      var src = null, map = {}, q, pr = /[Yy]arn\s+([A-Z])(?:\s*\([^)]*\))?\s+instead\s+of\s+[Yy]arn\s+([A-Z])/g;
+      parts.forEach(function(p){ if (p.name.toLowerCase().replace(/\s+/g, " ") === c.ref) src = p; });
+      if (!src) return;
+      while ((q = pr.exec(c.rest)) !== null) map[q[2]] = q[1];
+      var sub = function(s2){ return s2.replace(/\b([Yy]arn)\s+([A-Z])\b/g, function(a, w, l){ return w + " " + (map[l] || l); }); };
+      var np = { name: c.name, rows: {}, order: src.order.slice() };
+      src.order.forEach(function(n){
+        var r = src.rows[n];
+        np.rows[n] = { n: r.n, side: r.side, label: r.label, stated: r.stated, total: r.total,
+          segs: r.segs.map(function(g){ return { text: sub(g.text), st: g.st, ch: g.ch, open: g.open, fac: g.fac }; }) };
+      });
+      parts.push(np);
+    });
+    var firstClone = parts.length - clones.length;
+    if (firstClone > 0 && parts.length - firstClone > 1) parts = parts.slice(0, firstClone).concat(parts.slice(firstClone).sort(function(a, b){ return a.name < b.name ? -1 : 1; }));
     return { parts: parts, rows: parts[0] ? parts[0].rows : {}, order: parts[0] ? parts[0].order : [] };
   }
   function applyPart(P, i){
@@ -442,9 +472,10 @@ textarea.short{min-height:90px}
     }
     return cur;
   }
-  var HUES = [["teal","#2B7FA9"],["turquoise","#2BB5B0"],["aqua","#4CC9D0"],["navy","#1F2A5C"],["royal","#2A4FBF"],["sky","#6BB6E8"],["blue","#2F6FD0"],["lavender","#B7A6E0"],["lilac","#C3A4DB"],["purple","#7A3FA0"],["plum","#6E2F5B"],["magenta","#C2278C"],["pink","#EE7FB0"],["rose","#E26A8A"],["coral","#F2776A"],["emerald","#2F8F5B"],["scarlet","#C23F5A"],["red","#C8312F"],["crimson","#A8142E"],["burgundy","#6E1A2B"],["orange","#EE8A25"],["peach","#F6B38A"],["mustard","#D1A21B"],["gilt","#F3CB4A"],["gold","#EF9F2B"],["yellow","#F2D229"],["lemon","#F4E04D"],["cream","#F3E9CF"],["ivory","#F6F1E0"],["white","#F7F7F7"],["beige","#D8C3A0"],["tan","#C6A47A"],["brown","#7A4E2D"],["lime","#9BCB3C"],["olive","#7B8236"],["sage","#9CAF88"],["mint","#9EDBB8"],["green","#3B9B4F"],["silver","#B8BCC4"],["grey","#8A8F99"],["gray","#8A8F99"],["charcoal","#3A3D45"],["black","#2F3136"]];
+  var HUES = [["teal","#2B7FA9"],["turquoise","#2BB5B0"],["aqua","#4CC9D0"],["navy","#1F2A5C"],["royal","#2A4FBF"],["sky","#6BB6E8"],["blue","#2F6FD0"],["lavender","#B7A6E0"],["lilac","#C3A4DB"],["purple","#7A3FA0"],["plum","#6E2F5B"],["magenta","#C2278C"],["pink","#EE7FB0"],["rose","#E26A8A"],["coral","#F2776A"],["emerald","#2F8F5B"],["scarlet","#C23F5A"],["red","#C8312F"],["crimson","#A8142E"],["burgundy","#6E1A2B"],["orange","#EE8A25"],["peach","#F6B38A"],["mustard","#D1A21B"],["gilt","#F3CB4A"],["gold","#EF9F2B"],["yellow","#F2D229"],["lemon","#F4E04D"],["cream","#F3E9CF"],["ivory","#F6F1E0"],["white","#F7F7F7"],["beige","#D8C3A0"],["tan","#C6A47A"],["brown","#7A4E2D"],["fern","#6BAA3F"],["bottle","#0B5A3A"],["ladybird","#C8312F"],["lime","#9BCB3C"],["olive","#7B8236"],["sage","#9CAF88"],["mint","#9EDBB8"],["green","#3B9B4F"],["silver","#B8BCC4"],["grey","#8A8F99"],["gray","#8A8F99"],["charcoal","#3A3D45"],["black","#2F3136"]];
+  var YARNDESC = {};
   function guessHex(name){
-    var l = name.toLowerCase();
+    var l = (YARNDESC[name] || name).toLowerCase();
     for (var i = 0; i < HUES.length; i++) if (l.indexOf(HUES[i][0]) !== -1) return HUES[i][1];
     return "#888888";
   }
@@ -459,7 +490,7 @@ textarea.short{min-height:90px}
       while (words.length && STOP[words[0].toLowerCase()] && !/^[A-Z]$/.test(words[0])) words.shift();
       while (words.length && STOP[words[words.length - 1].toLowerCase()] && !/^[A-Z]$/.test(words[words.length - 1])) words.pop();
       var n = words.join(" "), k = n.replace(/\s+/g, "").toLowerCase();
-      if (!k || seen[k] || (STOP[k] && !/^[A-Z]$/.test(n))) return;
+      if (!k || seen[k] || (STOP[k] && !/^[A-Z]$/.test(n)) || /^[A-Z]{4,}(?: [A-Z]+)*$/.test(n)) return;
       seen[k] = 1; found.push(n);
     }
     var m, re1 = /\b(?:using|bring in(?:\s+(?:a\s+)?new\s+ball\s+of)?|join(?:\s+in)?|change to|switch to|with)\s+([A-Za-z]+(?:\s+[A-Za-z]+){0,2})/gi;
@@ -475,6 +506,10 @@ textarea.short{min-height:90px}
     while ((m = re3.exec(norm)) !== null) push(m[1].split(/\s+/));
     var re4 = /[Cc]olou?r\s+([A-Z])(?![A-Za-z])|(?:^|[\s,;(])([A-Z])\s*\(\s*\d+\s*\)|\b(?:sc|dc|hdc|htr|tr)\s+\d+\s+in\s+([A-Z])(?![A-Za-z])/g;
     while ((m = re4.exec(norm)) !== null) push([m[1] || m[2] || m[3]]);
+    var re5 = /\b[Yy]arn\s+([A-Z])(?![A-Za-z])(?:\s*\(([A-Za-z ]+)\))?/g;
+    var re6 = /\b[Yy]arn\s+([A-Z])[ \t]*\n\s*\d{2,4}\s+([A-Za-z]+(?: [A-Za-z]+)?)/g;
+    while ((m = re6.exec(text)) !== null) if (!YARNDESC["Yarn " + m[1]]) YARNDESC["Yarn " + m[1]] = m[2];
+    while ((m = re5.exec(norm)) !== null) { if (m[2] && !YARNDESC["Yarn " + m[1]]) YARNDESC["Yarn " + m[1]] = m[2]; push(["Yarn", m[1]]); }
     return found;
   }
   function buildChart(P, cols, countCh, left, startWS){
@@ -658,7 +693,7 @@ textarea.short{min-height:90px}
   }
   $("openPanel").addEventListener("click", function(){
     $("pattern").value = s.pattern; $("countCh").checked = !!s.countCh;
-    renderParts(); renderPatternStatus(); renderColours(); $("tintBtn").checked = !!s.tintBtn; $("chartBtn").checked = !!s.chartBtn; $("flipOnTurn").checked = !!s.flipOnTurn; $("startWS").checked = !!s.startWS; $("flipMode").value = s.flipMode === "side" ? "side" : "dir"; $("alertFlash").checked = !!s.alertFlash; $("alertSound").checked = !!s.alertSound; $("leftHanded").checked = !!s.leftHanded; $("panel").hidden = false; $("panel").scrollTop = 0;
+    renderParts(); renderPatternStatus(); renderColours(); $("tintBtn").checked = !!s.tintBtn; $("chartBtn").checked = !!s.chartBtn; $("flipOnTurn").checked = !!s.flipOnTurn; $("startWS").checked = !!s.startWS; $("alertFlash").checked = !!s.alertFlash; $("alertSound").checked = !!s.alertSound; $("leftHanded").checked = !!s.leftHanded; $("panel").hidden = false; $("panel").scrollTop = 0;
   });
   $("closePanel").addEventListener("click", function(){ $("panel").hidden = true; render(); });
   $("pattern").addEventListener("input", function(e){
@@ -699,7 +734,6 @@ textarea.short{min-height:90px}
   $("chartBtn").addEventListener("change", function(e){ s.chartBtn = e.target.checked; save(); });
   $("flipOnTurn").addEventListener("change", function(e){ s.flipOnTurn = e.target.checked; save(); });
   $("startWS").addEventListener("change", function(e){ s.startWS = e.target.checked; save(); });
-  $("flipMode").addEventListener("change", function(e){ s.flipMode = e.target.value === "side" ? "side" : "dir"; save(); });
   $("alertFlash").addEventListener("change", function(e){ s.alertFlash = e.target.checked; save(); if (s.alertFlash) { var b = $("closePanel"); b.classList.remove("flash"); void b.offsetWidth; b.classList.add("flash"); setTimeout(function(){ b.classList.remove("flash"); }, 900); } });
   $("alertSound").addEventListener("change", function(e){ s.alertSound = e.target.checked; save(); if (s.alertSound) beep(); });
   $("leftHanded").addEventListener("change", function(e){ s.leftHanded = e.target.checked; save(); });
@@ -723,7 +757,7 @@ textarea.short{min-height:90px}
     if (!s.flipOnTurn) return false;
     var cur = null;
     data.forEach(function(r){ if (r.n === s.rows) cur = r; });
-    return cur ? (s.flipMode === "side" ? !!cur.ws : cur.rev !== !!s.leftHanded) : false;
+    return cur ? !!cur.ws : false;
   }
   function drawMini(){
     var btn = $("stitch"), cv = $("miniChart"), sub = $("sub");
@@ -881,7 +915,7 @@ textarea.short{min-height:90px}
   });
 
   function backupText(){
-    return JSON.stringify({ v:1, name:s.name, stitches:s.stitches, rows:s.rows, target:s.target, countCh:s.countCh, tintBtn:s.tintBtn, alertFlash:s.alertFlash, alertSound:s.alertSound, leftHanded:s.leftHanded, chartBtn:s.chartBtn, miniScale:s.miniScale, flipOnTurn:s.flipOnTurn, startWS:s.startWS, flipMode:s.flipMode, colours:s.colours, pattern:s.pattern });
+    return JSON.stringify({ v:1, name:s.name, stitches:s.stitches, rows:s.rows, target:s.target, countCh:s.countCh, tintBtn:s.tintBtn, alertFlash:s.alertFlash, alertSound:s.alertSound, leftHanded:s.leftHanded, chartBtn:s.chartBtn, miniScale:s.miniScale, flipOnTurn:s.flipOnTurn, startWS:s.startWS, colours:s.colours, pattern:s.pattern });
   }
   function msg(t){ $("backupStatus").textContent = t; }
   $("copyBackup").addEventListener("click", function(){
@@ -915,7 +949,6 @@ textarea.short{min-height:90px}
       if ("chartBtn" in d) s.chartBtn = !!d.chartBtn;
       if ("flipOnTurn" in d) s.flipOnTurn = !!d.flipOnTurn;
       if ("startWS" in d) s.startWS = !!d.startWS;
-      if (d.flipMode === "side" || d.flipMode === "dir") s.flipMode = d.flipMode;
       if (typeof d.miniScale === "number") s.miniScale = Math.max(0.3, Math.min(3, d.miniScale));
       reparse();
       $("pattern").value = s.pattern; $("countCh").checked = s.countCh;
