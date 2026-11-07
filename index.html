@@ -107,6 +107,12 @@ textarea.short{min-height:90px}
 .finish[hidden]{display:none}
 .zoombtns{position:absolute;top:10px;left:10px;z-index:2;display:flex;gap:6px}
 .zoombtns[hidden]{display:none}
+.prow{display:flex;align-items:center;gap:8px;background:var(--surface);border-radius:14px;padding:10px 12px;border:2px solid transparent}
+.prow.cur{border-color:var(--row)}
+.pinfo{flex:1;min-width:0}
+.pname{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.psub{font-size:.85rem;color:var(--muted)}
+.dbox summary{font-weight:700;cursor:pointer;padding:6px 0}
 .zoombtns button{width:44px;height:44px;border-radius:12px;background:var(--surface);color:var(--ink);font-size:1.5rem;font-weight:800;line-height:1;box-shadow:0 1px 5px rgba(0,0,0,.3)}
 .zoombtns button:active{transform:scale(.95)}
 .stitch.chartmode{touch-action:none}
@@ -162,12 +168,16 @@ textarea.short{min-height:90px}
 <div class="panel" id="panel" hidden>
   <div class="inner">
     <div class="btns"><button class="btn" id="closePanel">Done</button></div>
+    <h2>Projects</h2>
+    <p>Your projects are saved on this phone automatically. Open one to carry on where you left off.</p>
+    <div id="projList" style="display:flex;flex-direction:column;gap:8px"></div>
+    <div class="btns"><button class="btn" id="newProj">New project</button></div>
     <h2>Pattern</h2>
     <p>Paste your pattern with its row headings, such as “Row 3” or “3rd Row”. The app will show what to do next based on your row and stitch counts.</p>
     <textarea id="pattern" placeholder="Paste your pattern here"></textarea>
     <label class="check"><input type="checkbox" id="countCh"> Count chains as stitches</label>
     <label class="check"><input type="checkbox" id="alertFlash"> Flash the instruction when it changes</label>
-    <label class="check"><input type="checkbox" id="alertSound"> Beep when the instruction changes</label>
+    <label class="check"><input type="checkbox" id="alertSound"> Play a trumpet fanfare when the instruction changes</label>
     <label class="check"><input type="checkbox" id="leftHanded"> I crochet left-handed (flips the chart)</label>
     <label class="check" id="partRow" hidden>Part of the pattern <select id="partSel" style="font:inherit;padding:8px;border-radius:10px;border:2px solid var(--line);background:var(--surface);color:var(--ink);max-width:60%"></select></label>
     <div class="status" id="patStatus"></div>
@@ -184,14 +194,20 @@ textarea.short{min-height:90px}
     <label class="check"><input type="checkbox" id="chartBtn"> Show the stitch chart on the big button instead</label>
     <label class="check"><input type="checkbox" id="flipOnTurn"> Show the back of the design on wrong-side rows (flips at each turn)</label>
     <label class="check"><input type="checkbox" id="startWS"> My pattern starts on the wrong side (only needed if it doesn’t say (ws) or (rs))</label>
-    <h2>Backup</h2>
-    <p>Copy your backup into a note or message. Paste it here later to get your project back.</p>
-    <div class="btns">
-      <button class="btn" id="copyBackup">Copy backup</button>
-      <button class="btn alt" id="shareBackup" hidden>Share…</button>
-    </div>
-    <textarea class="short" id="backup" placeholder="Your backup appears here. To restore, paste a backup here and tap Restore."></textarea>
-    <div class="btns"><button class="btn alt" id="restore">Restore from backup</button></div>
+    <h2>Save and open files</h2>
+    <p>Save all your projects to a file, then keep it in Files or iCloud, AirDrop it or email it to yourself. Open the file again on this phone or another one.</p>
+    <div class="btns"><button class="btn" id="saveFile">Save projects to a file</button><button class="btn alt" id="openFile">Open a saved file</button></div>
+    <input type="file" id="fileIn" accept=".json,application/json,text/plain" hidden>
+    <details class="dbox"><summary>Copy and paste instead</summary>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
+        <div class="btns">
+          <button class="btn" id="copyBackup">Copy backup</button>
+          <button class="btn alt" id="shareBackup" hidden>Share…</button>
+        </div>
+        <textarea class="short" id="backup" placeholder="Your backup appears here. To restore, paste a backup here and tap Restore."></textarea>
+        <div class="btns"><button class="btn alt" id="restore">Restore from backup</button></div>
+      </div>
+    </details>
     <div class="status" id="backupStatus"></div>
   </div>
 </div>
@@ -209,16 +225,28 @@ textarea.short{min-height:90px}
 <script>
 (function(){
   var KEY = "crochet-counter-v1";
-  var s = { name:"", stitches:0, rows:1, target:0, history:[], pattern:"", countCh:false, colours:[], tintBtn:true, alertFlash:true, alertSound:true, leftHanded:false, chartBtn:false, miniScale:1, flipOnTurn:true, part:0, prog:{}, startWS:false };
+  var s = { name:"", stitches:0, rows:1, target:0, history:[], pattern:"", countCh:false, colours:[], tintBtn:true, alertFlash:true, alertSound:true, leftHanded:false, chartBtn:false, miniScale:1, flipOnTurn:true, part:0, prog:{}, startWS:false, id:"" };
   var $ = function(id){ return document.getElementById(id); };
 
+  var DEF = JSON.stringify(s);
   try {
     var raw = localStorage.getItem(KEY);
     if (raw) { var p = JSON.parse(raw); if (p && typeof p === "object") { for (var k in s) if (k in p) s[k] = p[k]; } }
   } catch(e) {}
   if (!Array.isArray(s.history)) s.history = [];
 
-  function save(){ try { localStorage.setItem(KEY, JSON.stringify(s)); } catch(e) {} }
+  function uid(){ return "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+  if (!s.id) s.id = uid();
+  var LKEY = "crochet-counter-lib-v1", lib = { items: {}, order: [] };
+  try { var lr = JSON.parse(localStorage.getItem(LKEY) || "null"); if (lr && lr.items && Array.isArray(lr.order)) lib = lr; } catch(e) {}
+  function save(){
+    try {
+      var j = JSON.stringify(s); localStorage.setItem(KEY, j);
+      var c = JSON.parse(j); c.history = []; lib.items[s.id] = c;
+      if (lib.order.indexOf(s.id) < 0) lib.order.push(s.id);
+      localStorage.setItem(LKEY, JSON.stringify(lib));
+    } catch(e) {}
+  }
   function snap(){ s.history.push({ stitches:s.stitches, rows:s.rows }); if (s.history.length > 100) s.history.shift(); }
 
   // PARSE-START
@@ -572,17 +600,34 @@ textarea.short{min-height:90px}
     return w.finished ? 0 : w.size - w.offset;
   }
   var lastKey = null, allowAlert = false, actx = null;
+  var busyUntil = 0;
   function beep(){
     try {
       var AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
       if (!actx) actx = new AC();
       if (actx.state === "suspended") actx.resume();
-      var o = actx.createOscillator(), g = actx.createGain(), t = actx.currentTime;
-      o.type = "sine"; o.frequency.value = 880; o.connect(g); g.connect(actx.destination);
-      g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(0.25, t + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
-      o.start(t); o.stop(t + 0.3);
+      var t0 = actx.currentTime + 0.03;
+      if (t0 < busyUntil) return;
+      var master = actx.createGain(); master.gain.value = 0.3; master.connect(actx.destination);
+      // "do, dut, da, DOOO": three short notes and a long one, rising like a bugle call
+      [[392.00, 0.00, 0.15], [523.25, 0.20, 0.15], [659.25, 0.40, 0.15], [783.99, 0.60, 0.60]].forEach(function(n){
+        var st = t0 + n[1], en = st + n[2];
+        var f = actx.createBiquadFilter(), g = actx.createGain();
+        f.type = "lowpass"; f.Q.value = 3;
+        f.frequency.setValueAtTime(700, st); f.frequency.exponentialRampToValueAtTime(3400, st + 0.05); f.frequency.exponentialRampToValueAtTime(1900, en);
+        g.gain.setValueAtTime(0.0001, st); g.gain.exponentialRampToValueAtTime(0.5, st + 0.025);
+        g.gain.exponentialRampToValueAtTime(0.35, en - 0.05); g.gain.exponentialRampToValueAtTime(0.0001, en);
+        f.connect(g); g.connect(master);
+        [0, 9].forEach(function(cents){
+          var o = actx.createOscillator(); o.type = "sawtooth"; o.frequency.value = n[0]; o.detune.value = cents;
+          if (n[2] > 0.3) {
+            var lfo = actx.createOscillator(), lg = actx.createGain(); lfo.frequency.value = 5.5; lg.gain.value = 5;
+            lfo.connect(lg); lg.connect(o.frequency); lfo.start(st + 0.15); lfo.stop(en + 0.05);
+          }
+          o.connect(f); o.start(st); o.stop(en + 0.05);
+        });
+      });
+      busyUntil = t0 + 1.4;
     } catch(e) {}
   }
   function alertNew(){
@@ -609,7 +654,7 @@ textarea.short{min-height:90px}
     track("r" + row.n + "|" + (w.finished ? "done" : w.idx) + "|" + (ccol ? ccol.hex : ""));
     if (w.finished) {
       add(body, "nowmain", "Row complete");
-      $("nowthen").textContent = w.pending.length ? "Then: " + w.pending.join(", ") : "Tap Next row";
+      $("nowthen").textContent = w.pending.length ? "Then: " + w.pending.join(", ") : "Tap the big button for the next row";
       return;
     }
     w.pending.forEach(function(t){ add(body, "nowpre", t); });
@@ -632,7 +677,7 @@ textarea.short{min-height:90px}
     var col = curColour(), sb = $("stitch");
     if (s.tintBtn && col && !done && !chartModeOn()) { sb.style.background = col.hex; sb.style.color = textOn(col.hex); }
     else { sb.style.removeProperty("background"); sb.style.removeProperty("color"); }
-    $("sub").textContent = done ? "Row complete – tap Next row" :
+    $("sub").textContent = done ? "Row complete – tap for the next row" :
       (target > 0 ? "of " + target + " – tap to add a stitch" : "Tap to add a stitch");
     $("undo").disabled = s.history.length === 0;
     $("minus").disabled = s.stitches === 0;
@@ -645,7 +690,17 @@ textarea.short{min-height:90px}
     save();
   }
 
-  $("stitch").addEventListener("click", function(){ if (Date.now() - pinchAt < 500) return; snap(); s.stitches++; allowAlert = true; render(); allowAlert = false; });
+  function rowTarget(){
+    var row = currentRow(), pt = row ? rowTotal(row, s.countCh) : 0;
+    return pt > 0 ? pt : s.target;
+  }
+  function tapStitch(){
+    snap();
+    var tg = rowTarget();
+    if (tg > 0 && s.stitches >= tg) { s.rows++; s.stitches = 0; } else s.stitches++;
+    allowAlert = true; render(); allowAlert = false;
+  }
+  $("stitch").addEventListener("click", function(){ if (Date.now() - pinchAt < 500) return; tapStitch(); });
   $("minus").addEventListener("click", function(){ if (s.stitches > 0) { snap(); s.stitches--; render(); } });
   $("next").addEventListener("click", function(){ snap(); s.rows++; s.stitches = 0; allowAlert = true; render(); allowAlert = false; });
   $("finish").addEventListener("click", function(){
@@ -691,10 +746,11 @@ textarea.short{min-height:90px}
       add(list, "", (rw.label || "Row") + " " + n + ": " + tot + " stitches" + (rw.stated != null && rw.stated !== tot ? " – pattern says " + rw.stated + ", please check" : ""));
     });
   }
-  $("openPanel").addEventListener("click", function(){
+  function syncPanel(){
     $("pattern").value = s.pattern; $("countCh").checked = !!s.countCh;
-    renderParts(); renderPatternStatus(); renderColours(); $("tintBtn").checked = !!s.tintBtn; $("chartBtn").checked = !!s.chartBtn; $("flipOnTurn").checked = !!s.flipOnTurn; $("startWS").checked = !!s.startWS; $("alertFlash").checked = !!s.alertFlash; $("alertSound").checked = !!s.alertSound; $("leftHanded").checked = !!s.leftHanded; $("panel").hidden = false; $("panel").scrollTop = 0;
-  });
+    renderParts(); renderPatternStatus(); renderColours(); $("tintBtn").checked = !!s.tintBtn; $("chartBtn").checked = !!s.chartBtn; $("flipOnTurn").checked = !!s.flipOnTurn; $("startWS").checked = !!s.startWS; $("alertFlash").checked = !!s.alertFlash; $("alertSound").checked = !!s.alertSound; $("leftHanded").checked = !!s.leftHanded;
+  }
+  $("openPanel").addEventListener("click", function(){ syncPanel(); renderProjects(); $("panel").hidden = false; $("panel").scrollTop = 0; });
   $("closePanel").addEventListener("click", function(){ $("panel").hidden = true; render(); });
   $("pattern").addEventListener("input", function(e){
     s.pattern = e.target.value; reparse(); renderParts(); renderPatternStatus(); save();
@@ -895,7 +951,7 @@ textarea.short{min-height:90px}
   $("chartZoom").addEventListener("click", function(){ chartZoom = (chartZoom + 1) % 3; drawChart(true); });
   $("closeChart").addEventListener("click", function(){ $("chartPanel").hidden = true; });
   $("chartAdd").addEventListener("click", function(){
-    snap(); s.stitches++; allowAlert = true; render(); allowAlert = false; drawChart(false);
+    tapStitch(); drawChart(false);
   });
   window.addEventListener("resize", function(){ if (!$("chartPanel").hidden) drawChart(false); drawMini(); });
 
@@ -912,6 +968,100 @@ textarea.short{min-height:90px}
     var pr = s.prog[s.part] || [1, 0];
     s.rows = pr[0]; s.stitches = pr[1]; s.history = [];
     applyPart(parsed, s.part); renderPatternStatus(); render();
+  });
+
+  function renderProjects(){
+    var list = $("projList");
+    while (list.firstChild) list.removeChild(list.firstChild);
+    lib.order.forEach(function(id){
+      var p = id === s.id ? s : lib.items[id]; if (!p) return;
+      var row = document.createElement("div"); row.className = "prow" + (id === s.id ? " cur" : "");
+      var info = document.createElement("div"), nm = document.createElement("div"), sm = document.createElement("div");
+      info.className = "pinfo"; nm.className = "pname"; sm.className = "psub";
+      nm.textContent = (p.name && p.name.trim()) || "Untitled project";
+      sm.textContent = (id === s.id ? "Open now · " : "") + "Row " + p.rows + ", stitch " + p.stitches;
+      info.appendChild(nm); info.appendChild(sm); row.appendChild(info);
+      if (id !== s.id) {
+        var ob = document.createElement("button"); ob.className = "btn"; ob.textContent = "Open";
+        ob.addEventListener("click", function(){ openProject(id); }); row.appendChild(ob);
+      }
+      var db = document.createElement("button"); db.className = "btn alt"; db.textContent = "Delete";
+      db.addEventListener("click", function(){
+        if (db.armed) { removeProject(id); return; }
+        db.armed = true; db.textContent = "Tap again";
+        setTimeout(function(){ db.armed = false; db.textContent = "Delete"; }, 4000);
+      });
+      row.appendChild(db); list.appendChild(row);
+    });
+  }
+  function loadProject(obj){
+    var d = JSON.parse(DEF);
+    Object.keys(s).forEach(function(k){ delete s[k]; });
+    Object.keys(d).forEach(function(k){ s[k] = (k in obj && obj[k] != null) ? obj[k] : d[k]; });
+    if (!s.id) s.id = uid();
+    if (!Array.isArray(s.history)) s.history = [];
+    reparse(); lastKey = null; chartCache = { key: null, val: null };
+    render(); syncPanel(); renderParts(); renderPatternStatus(); renderColours(); renderProjects();
+  }
+  function openProject(id){ if (id === s.id || !lib.items[id]) return; save(); loadProject(lib.items[id]); }
+  function newProject(){
+    save();
+    var keep = { id: uid(), name: "" };
+    ["alertFlash", "alertSound", "leftHanded", "flipOnTurn", "chartBtn", "miniScale", "tintBtn"].forEach(function(k){ keep[k] = s[k]; });
+    loadProject(keep);
+  }
+  function removeProject(id){
+    delete lib.items[id];
+    var i = lib.order.indexOf(id); if (i >= 0) lib.order.splice(i, 1);
+    if (id === s.id) { var nx = lib.order[0]; loadProject(nx && lib.items[nx] ? lib.items[nx] : { id: uid() }); }
+    else { try { localStorage.setItem(LKEY, JSON.stringify(lib)); } catch(e) {} renderProjects(); }
+  }
+  function allProjectsText(){ save(); return JSON.stringify({ v: 2, projects: lib.order.map(function(id){ return lib.items[id]; }).filter(Boolean) }); }
+  function cleanProject(p){
+    var d = JSON.parse(DEF), o = {};
+    Object.keys(d).forEach(function(k){ o[k] = (k in p && p[k] != null && typeof p[k] === typeof d[k] && Array.isArray(p[k]) === Array.isArray(d[k])) ? p[k] : d[k]; });
+    o.history = []; o.stitches = Math.max(0, o.stitches | 0); o.rows = Math.max(1, o.rows | 0); o.miniScale = Math.max(0.3, Math.min(3, o.miniScale));
+    o.colours = o.colours.filter(function(c){ return c && typeof c.name === "string" && /^#[0-9a-fA-F]{6}$/.test(c.hex); });
+    return o;
+  }
+  function importText(text){
+    var d, bad = "That doesn’t look like a saved file.";
+    try { d = JSON.parse(text); } catch(e) { return bad; }
+    var list = d && Array.isArray(d.projects) ? d.projects : (d && typeof d === "object" && d.v ? [d] : []);
+    if (!list.length) return bad;
+    var n = 0;
+    list.forEach(function(p){
+      if (!p || typeof p !== "object") return;
+      var o = cleanProject(p);
+      if (!o.id || o.id === s.id || lib.items[o.id]) { if (o.id) o.name = (o.name || "Untitled project") + " (imported)"; o.id = uid(); }
+      lib.items[o.id] = o; lib.order.push(o.id); n++;
+    });
+    try { localStorage.setItem(LKEY, JSON.stringify(lib)); } catch(e) {}
+    renderProjects();
+    return n ? "Added " + n + " project" + (n === 1 ? "" : "s") + " to the list at the top. Tap Open to carry on." : "Nothing to add.";
+  }
+  $("newProj").addEventListener("click", newProject);
+  $("saveFile").addEventListener("click", function(){
+    var text = allProjectsText(), name = "crochet-projects-" + new Date().toISOString().slice(0, 10) + ".json";
+    function download(){
+      try {
+        var a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], { type: "application/json" })); a.download = name;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a); msg("Saved " + name + " to your downloads.");
+      } catch(e) { msg("Couldn’t save a file here. Use Copy and paste instead."); }
+    }
+    try {
+      var f = new File([text], name, { type: "application/json" });
+      if (navigator.canShare && navigator.canShare({ files: [f] })) {
+        navigator.share({ files: [f], title: "Crochet projects" }).then(function(){ msg("Saved."); }).catch(function(e){ if (!e || e.name !== "AbortError") download(); });
+        return;
+      }
+    } catch(e) {}
+    download();
+  });
+  $("openFile").addEventListener("click", function(){ $("fileIn").click(); });
+  $("fileIn").addEventListener("change", function(e){
+    var f = e.target.files && e.target.files[0]; if (!f) return;
+    var r = new FileReader(); r.onload = function(){ msg(importText(String(r.result))); e.target.value = ""; }; r.readAsText(f);
   });
 
   function backupText(){
