@@ -315,6 +315,9 @@ textarea.short{min-height:90px}
   }
   // "(sc, inc) x 6", "[sc, dec] repeat 3 times", "(sc, inc) around", "inc x 6"
   function expandRepeats(body, stated, prev){
+    // "* A, B * rep from * to * 14 times more" (the bracketed part is worked once already, then 14 more times)
+    body = body.replace(/\*\s*([^*]+?)\s*\*\s*,?\s*rep(?:eat)?\s+(?:from\s+)?\*\s*(?:to|and)\s*\*\s*(?:(\d+)\s*(?:more\s+)?times?(?:\s+more)?|(across|to\s+end|to\s+last\s+[^,.]*))/gi,
+      function(a, inner, n){ return n ? "(" + inner + ") x " + (parseInt(n, 10) + 1) : "(" + inner + ") around"; });
     body = body.replace(/\*\s*([^*]+?)\s*,?\s*rep(?:eat)?\s+from\s+\*\s*(?:to\s+end|across|to\s+last\s+[^,.]*)/gi, "($1) around")
       .replace(/\*\s*([^*]+?)\s*,?\s*rep(?:eat)?\s+from\s+\*\s*(\d+)\s*more\s*times?/gi, function(a, i, n){ return "(" + i + ") x " + (parseInt(n, 10) + 1); })
       .replace(/\*\s*([^*]+?)\s*,?\s*rep(?:eat)?\s+from\s+\*\s*(\d+)\s*times?/gi, "($1) x $2");
