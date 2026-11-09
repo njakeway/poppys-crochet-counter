@@ -358,7 +358,7 @@ textarea.short{min-height:90px}
   }
   function parsePattern(text){
     text = text.replace(/\r/g, "").replace(/\f/g, "\n").replace(/\b(colou?rs?)\s+([A-Za-z])(?![A-Za-z])/gi, function(a, c, l){ return c + " " + l.toUpperCase(); });
-    var re = /(^|\n|[.!?:)\]]\s*)[ \t]*(?:[•*\-–]\s*)?(?:\d+[.)]\s+)?(?:\*\*)?(?:(?:Rows?|Rnds?|Rounds?|R)\s*(\d+)(?:\s*(?:-|–|—|to|&|and)\s*(\d+))?|(\d+)(?:st|nd|rd|th)(?:\s*(?:-|–|—|to)\s*(\d+)(?:st|nd|rd|th))?\s+(?:Rows?|Rnds?|Rounds?))\b(?:\*\*)?[ \t]*[:.\-–)=]?/gi;
+    var re = /(^|\n|[.!?:)\]]\s*)[ \t]*(?:[•*\-–]\s*)?(?:\d+[.)]\s+)?(?:\*\*)?(?:(?:Rows?|Rnds?|Rounds?|R)\s*(\d+)(?:\s*(?:-|–|—|to|&|and)\s*(\d+))?|(\d+)(?:st|nd|rd|th)(?:\s*(?:-|–|—|to|&|and)\s*(\d+)(?:st|nd|rd|th))?\s+(?:Rows?|Rnds?|Rounds?))\b(?:\*\*)?[ \t]*[:.\-–)=]?/gi;
     var clones = [];
     text = text.replace(/(?:^|\n)[ \t]*([A-Z][A-Za-z0-9 ]{1,30}?)[ \t]*\n[ \t]*Work as given for ([A-Za-z0-9 ]+?),?\s+using\s+([\s\S]+?)\.[ \t]*(?=\n|$)/g, function(m0, nm, ref, rest){ clones.push({ name: nm.trim(), ref: ref.trim().toLowerCase(), rest: rest.replace(/\s+/g, " ") }); return "\n"; });
     var hits = [], m;
@@ -403,7 +403,7 @@ textarea.short{min-height:90px}
         var rs = segs;
         if (rp) {
           var src = part.rows[parseInt(rp[2], 10) + (rp[3] ? n - from : 0)];
-          if (src) rs = segs.concat(src.segs);
+          if (src) rs = n === from ? segs.concat(src.segs) : src.segs;
         }
         var total = rs.reduce(function(a, g){ return a + g.st; }, 0);
         if (!(n in part.rows)) part.order.push(n);
