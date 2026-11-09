@@ -456,7 +456,7 @@ textarea.short{min-height:90px}
       if (k && !(k in keys)) { keys[k] = i; parts.push(k); }
     });
     cols.forEach(function(c, i){
-      var y = c.name.trim().match(/^yarn\s+([A-Za-z])$/i);
+      var y = c.name.trim().match(/^(?:yarn|colou?r)\s+([A-Za-z])(?![A-Za-z])/i);
       if (y) { var k1 = y[1].toLowerCase(); if (!(k1 in keys)) parts.push(k1); keys[k1] = i; }
     });
     if (!parts.length) return null;
@@ -578,7 +578,14 @@ textarea.short{min-height:90px}
     if (!(s.part >= 0 && s.part < parsed.parts.length)) s.part = 0;
     applyPart(parsed, s.part);
   }
+  function tidyColours(){
+    var have = {}, n0 = s.colours.length;
+    s.colours.forEach(function(c){ var m = c.name.trim().match(/^(?:yarn|colou?r)\s+([A-Za-z])(?![A-Za-z])/i); if (m) have[m[1].toLowerCase()] = 1; });
+    s.colours = s.colours.filter(function(c){ var n = c.name.trim(); return !(n.length === 1 && have[n.toLowerCase()]); });
+    return n0 - s.colours.length;
+  }
   reparse();
+  if (tidyColours()) save();
 
   function curColour(){
     if (!s.pattern.trim() || !Array.isArray(s.colours)) return null;
@@ -760,7 +767,7 @@ textarea.short{min-height:90px}
   $("openPanel").addEventListener("click", function(){ syncPanel(); renderProjects(); $("panel").hidden = false; $("panel").scrollTop = 0; });
   $("closePanel").addEventListener("click", function(){ $("panel").hidden = true; render(); });
   $("pattern").addEventListener("input", function(e){
-    s.pattern = e.target.value; reparse(); renderParts(); renderPatternStatus(); save();
+    s.pattern = e.target.value; reparse(); if (tidyColours()) renderColours(); renderParts(); renderPatternStatus(); save();
   });
   $("countCh").addEventListener("change", function(e){ s.countCh = e.target.checked; renderPatternStatus(); save(); });
 
@@ -790,10 +797,7 @@ textarea.short{min-height:90px}
     detectColours(s.pattern).forEach(function(n){
       if (!have[n.replace(/\s+/g, "").toLowerCase()]) { s.colours.push({ name: n, hex: guessHex(n) }); added++; }
     });
-    var all = {}; s.colours.forEach(function(c){ all[c.name.replace(/\s+/g, "").toLowerCase()] = 1; });
-    var n0 = s.colours.length;
-    s.colours = s.colours.filter(function(c){ var n = c.name.trim(); return !(n.length === 1 && all["yarn" + n.toLowerCase()]); });
-    var merged = n0 - s.colours.length;
+    var merged = tidyColours();
     $("colourStatus").textContent = (added ? "Added " + added + " colour" + (added === 1 ? "" : "s") + ". Check each swatch and change any that look wrong." : "No new colour names found. Use Add colour to type them in.") +
       (merged ? " Removed " + merged + " duplicate" + (merged === 1 ? "" : "s") + " (a bare letter such as A is now treated as Yarn A)." : "");
     renderColours(); save();
@@ -1012,7 +1016,7 @@ textarea.short{min-height:90px}
     Object.keys(d).forEach(function(k){ s[k] = (k in obj && obj[k] != null) ? obj[k] : d[k]; });
     if (!s.id) s.id = uid();
     if (!Array.isArray(s.history)) s.history = [];
-    reparse(); lastKey = null; chartCache = { key: null, val: null };
+    reparse(); tidyColours(); lastKey = null; chartCache = { key: null, val: null };
     render(); syncPanel(); renderParts(); renderPatternStatus(); renderColours(); renderProjects();
   }
   function openProject(id){ if (id === s.id || !lib.items[id]) return; save(); loadProject(lib.items[id]); }
