@@ -455,6 +455,10 @@ textarea.short{min-height:90px}
       var k = c.name.replace(/\s+/g, "").toLowerCase();
       if (k && !(k in keys)) { keys[k] = i; parts.push(k); }
     });
+    cols.forEach(function(c, i){
+      var y = c.name.trim().match(/^yarn\s+([A-Za-z])$/i);
+      if (y) { var k1 = y[1].toLowerCase(); if (!(k1 in keys)) parts.push(k1); keys[k1] = i; }
+    });
     if (!parts.length) return null;
     parts.sort(function(a, b){ return b.length - a.length; });
     return { re: parts.map(function(k){ return k.split("").map(escRe).join("\\s*"); }).join("|"), keys: keys };
@@ -541,7 +545,7 @@ textarea.short{min-height:90px}
     var re6 = /\b[Yy]arn\s+([A-Z])[ \t]*\n\s*\d{2,4}\s+([A-Za-z]+(?: [A-Za-z]+)?)/g;
     while ((m = re6.exec(text)) !== null) if (!YARNDESC["Yarn " + m[1]]) YARNDESC["Yarn " + m[1]] = m[2];
     while ((m = re5.exec(norm)) !== null) { if (m[2] && !YARNDESC["Yarn " + m[1]]) YARNDESC["Yarn " + m[1]] = m[2]; push(["Yarn", m[1]]); }
-    return found;
+    return found.filter(function(n){ return !(n.length === 1 && seen["yarn" + n.toLowerCase()]); });
   }
   function buildChart(P, cols, countCh, left, startWS){
     var cm = colourMatcher(cols), cur = -1, out = [], prevWs = null, prevTurn = false, turns = 0;
@@ -786,7 +790,12 @@ textarea.short{min-height:90px}
     detectColours(s.pattern).forEach(function(n){
       if (!have[n.replace(/\s+/g, "").toLowerCase()]) { s.colours.push({ name: n, hex: guessHex(n) }); added++; }
     });
-    $("colourStatus").textContent = added ? "Added " + added + " colour" + (added === 1 ? "" : "s") + ". Check each swatch and change any that look wrong." : "No new colour names found. Use Add colour to type them in.";
+    var all = {}; s.colours.forEach(function(c){ all[c.name.replace(/\s+/g, "").toLowerCase()] = 1; });
+    var n0 = s.colours.length;
+    s.colours = s.colours.filter(function(c){ var n = c.name.trim(); return !(n.length === 1 && all["yarn" + n.toLowerCase()]); });
+    var merged = n0 - s.colours.length;
+    $("colourStatus").textContent = (added ? "Added " + added + " colour" + (added === 1 ? "" : "s") + ". Check each swatch and change any that look wrong." : "No new colour names found. Use Add colour to type them in.") +
+      (merged ? " Removed " + merged + " duplicate" + (merged === 1 ? "" : "s") + " (a bare letter such as A is now treated as Yarn A)." : "");
     renderColours(); save();
   });
   $("tintBtn").addEventListener("change", function(e){ s.tintBtn = e.target.checked; save(); });
