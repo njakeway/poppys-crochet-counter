@@ -354,7 +354,8 @@ textarea.short{min-height:90px}
         return { at: offs[i], pre: pre, name: l };
       }
     }
-    return { at: body.length, pre: "", name: "" };
+    var tail = lines.slice(Math.max(0, lines.length - 6)).filter(function(x){ return /yarn|colou?r|\buse\b|\bwith\b/i.test(x); }).join(" ");
+    return { at: body.length, pre: tail, name: "" };
   }
   function parsePattern(text){
     text = text.replace(/\r/g, "").replace(/\f/g, "\n").replace(/\b(colou?rs?)\s+([A-Za-z])(?![A-Za-z])/gi, function(a, c, l){ return c + " " + l.toUpperCase(); });
@@ -369,7 +370,7 @@ textarea.short{min-height:90px}
       restart[i] = i === 0 || h.a <= last; last = h.b || h.a; pre[i] = ""; names[i] = "";
       if (restart[i]) {
         var src = i === 0 ? text.slice(0, h.s) : raws[i - 1], cut = headingCut(src);
-        names[i] = cut.name; pre[i] = cut.pre;
+        names[i] = cut.name; pre[i] = (cut.name || i === 0) ? cut.pre : "";
         if (i > 0) raws[i - 1] = src.slice(0, cut.at);
       }
     });
@@ -387,7 +388,8 @@ textarea.short{min-height:90px}
       var ts = takeStated(rp ? "" : body), pt = pre[i] ? pre[i].replace(/\s+/g, " ").trim() : "";
       body = rp ? lead : expandRepeats(ts.body, ts.stated, prevTotal);
       var mk = function(t){ var c = countSeg(t); return { text: t, st: c.st, ch: c.ch, open: c.open, fac: c.fac }; };
-      var segs = splitTop((pt ? pt + ", " : "") + body.replace(/[.\s]+$/, "")).map(mk);
+      var preSegs = pt ? splitTop(pt).map(function(t2){ return { text: t2, st: 0, ch: 0, open: false, fac: 1, pre: true }; }) : [];
+      var segs = preSegs.concat(splitTop(body.replace(/[.\s]+$/, "")).map(mk));
       if (/\bfollow\b[^.]*\b(?:graph|chart)\b/i.test(raws[i]) && !segs.some(function(g){ return g.st > 0; }))
         segs = [{ text: raws[i].replace(/\s+/g, " ").trim(), st: ts.stated != null ? ts.stated : prevTotal, ch: 0, open: false, fac: 1 }];
       var known = 0, opens = [];
@@ -421,7 +423,7 @@ textarea.short{min-height:90px}
       src.order.forEach(function(n){
         var r = src.rows[n];
         np.rows[n] = { n: r.n, side: r.side, label: r.label, stated: r.stated, total: r.total,
-          segs: r.segs.map(function(g){ return { text: sub(g.text), st: g.st, ch: g.ch, open: g.open, fac: g.fac }; }) };
+          segs: r.segs.map(function(g){ return { text: sub(g.text), st: g.st, ch: g.ch, open: g.open, fac: g.fac, pre: g.pre }; }) };
       });
       parts.push(np);
     });
@@ -439,7 +441,7 @@ textarea.short{min-height:90px}
     var cum = 0, pending = [];
     for (var i = 0; i < row.segs.length; i++) {
       var g = row.segs[i], c = segCount(g, countCh);
-      if (c === 0) { pending.push(g.text); continue; }
+      if (c === 0) { if (!g.pre) pending.push(g.text); continue; }
       if (cum + c > done) {
         return { finished: false, idx: i, pending: done === cum ? pending : [], cur: g.text, offset: done - cum, size: c,
                  then: i + 1 < row.segs.length ? row.segs[i + 1].text : "" };
@@ -465,7 +467,7 @@ textarea.short{min-height:90px}
   }
   function colourPieces(text, cm){
     var out = [];
-    if (!cm) { var c0 = countSeg(text); return [{ col: -1, st: c0.st, ch: c0.ch }]; }
+    if (!cm) { var c0 = countSeg(text); return [{ col: -1, st: c0.st, ch: c0.ch, text: text }]; }
     var re = new RegExp(cm.re, "gi"), m, hits = [];
     while ((m = re.exec(text)) !== null) {
       var b = text.charAt(m.index - 1), a = text.charAt(m.index + m[0].length);
@@ -480,11 +482,11 @@ textarea.short{min-height:90px}
     var start = 0, col = -1;
     hits.forEach(function(h){
       var seg = text.slice(start, h.i), c = countSeg(seg);
-      out.push({ col: /\bin\s*$/i.test(seg) && c.st + c.ch > 0 ? h.k : col, st: c.st, ch: c.ch });
+      out.push({ col: /\bin\s*$/i.test(seg) && c.st + c.ch > 0 ? h.k : col, st: c.st, ch: c.ch, text: seg });
       start = h.i; col = h.k;
     });
     var last = countSeg(text.slice(start));
-    out.push({ col: col, st: last.st, ch: last.ch });
+    out.push({ col: col, st: last.st, ch: last.ch, text: text.slice(start) });
     return out;
   }
   function colourAt(P, rowNum, done, cols, countCh){
@@ -499,7 +501,7 @@ textarea.short{min-height:90px}
           var p = ps[j];
           if (p.col >= 0) cur = p.col;
           if (!mine) continue;
-          var c = p.st + (countCh ? p.ch : 0);
+          var c = row.segs[i].pre ? 0 : p.st + (countCh ? p.ch : 0);
           if (c > 0 && cum + c > done) return cur;
           cum += c;
         }
@@ -547,22 +549,29 @@ textarea.short{min-height:90px}
     while ((m = re5.exec(norm)) !== null) { if (m[2] && !YARNDESC["Yarn " + m[1]]) YARNDESC["Yarn " + m[1]] = m[2]; push(["Yarn", m[1]]); }
     return found.filter(function(n){ return !(n.length === 1 && seen["yarn" + n.toLowerCase()]); });
   }
+  function markKind(t){
+    if (/bobble/i.test(t)) return "b";
+    if (/spike/i.test(t)) return "s";
+    if (/loop[\s-]*st/i.test(t)) return "L";
+    if (/popcorn/i.test(t)) return "p";
+    return "";
+  }
   function buildChart(P, cols, countCh, left, startWS){
     var cm = colourMatcher(cols), cur = -1, out = [], prevWs = null, prevTurn = false, turns = 0;
     P.order.slice().sort(function(a, b){ return a - b; }).forEach(function(n){
-      var row = P.rows[n], cells = [];
+      var row = P.rows[n], cells = [], marks = [];
       row.segs.forEach(function(g){
         colourPieces(g.text, cm).forEach(function(p){
           if (p.col >= 0) cur = p.col;
-          var c = p.st + (countCh ? p.ch : 0);
-          for (var k = 0; k < c; k++) cells.push(cur);
+          var c = g.pre ? 0 : p.st + (countCh ? p.ch : 0);
+          var mk = markKind(p.text || ""); for (var k = 0; k < c; k++) { cells.push(cur); marks.push(mk); }
         });
       });
       var rowText = row.segs.map(function(g){ return g.text; }).join(", "), ch = rowText.match(/changing\s+to\s+([A-Za-z ]+?)\s+on\s+(?:the\s+)?(?:last|final)\s+st/i);
       if (ch && cm && cells.length) { var key = ch[1].replace(/\s+/g, "").toLowerCase(); if (key in cm.keys) cells[cells.length - 1] = cm.keys[key]; }
       var ws = row.side === "WS" ? true : row.side === "RS" ? false : (prevWs === null ? !!startWS : (prevTurn ? !prevWs : prevWs));
       prevWs = ws; prevTurn = /\bturn\b/i.test(rowText);
-      out.push({ n: n, cells: cells, rev: (!ws) !== !!left, ws: ws, turns: turns });
+      out.push({ n: n, cells: cells, marks: marks, rev: (!ws) !== !!left, ws: ws, turns: turns });
       if (prevTurn) turns++;
     });
     var first = -1;
@@ -878,6 +887,7 @@ textarea.short{min-height:90px}
           g.globalAlpha = 1; g.fillStyle = hex; g.fillRect(x, y, cs, cs);
           g.lineWidth = 3; g.strokeStyle = ink; g.strokeRect(x + 1.5, y + 1.5, cs - 3, cs - 3);
         }
+        if (r.marks && r.marks[kk] && cs >= 9) drawMark(g, r.marks[kk], x, y, cs, hex, (done || (isCur && kk === s.stitches)) ? 1 : 0.28);
       });
     });
     g.restore(); g.globalAlpha = 1;
@@ -902,6 +912,11 @@ textarea.short{min-height:90px}
   }, { passive: false });
   stitchBtn.addEventListener("touchend", function(e){ if (pinch) { pinchAt = Date.now(); if (e.touches.length < 2) { pinch = null; save(); } } });
   stitchBtn.addEventListener("touchcancel", function(){ pinch = null; save(); });
+  function drawMark(g, ch, x, y, cs, hex, alpha){
+    g.save(); g.globalAlpha = alpha; g.fillStyle = textOn(hex);
+    g.font = "700 " + Math.round(cs * 0.68) + "px system-ui, sans-serif"; g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText(ch, x + cs / 2, y + cs / 2 + 1); g.restore();
+  }
   var chartZoom = 0;
   function drawChart(toCurrent){
     var wrap = $("chartScroll"), cv = $("chartCanvas"), info = $("chartInfo"), leg = $("chartLegend");
@@ -909,12 +924,13 @@ textarea.short{min-height:90px}
     var cd = getChartData(), cols = cd.cols, data = cd.data, M = chartMirror(data);
     if (!data.length) { cv.hidden = true; info.textContent = "No pattern rows found yet. Tap Done, then Pattern, and paste your pattern."; return; }
     cv.hidden = false;
-    var maxLen = 1, totalAll = 0, doneAll = 0, used = {};
+    var maxLen = 1, totalAll = 0, doneAll = 0, used = {}, usedM = {};
     data.forEach(function(r){
       if (r.cells.length > maxLen) maxLen = r.cells.length;
       totalAll += r.cells.length;
       if (r.n < s.rows) doneAll += r.cells.length; else if (r.n === s.rows) doneAll += Math.min(s.stitches, r.cells.length);
       r.cells.forEach(function(ci){ if (ci >= 0) used[ci] = 1; });
+      (r.marks || []).forEach(function(m){ if (m) usedM[m] = 1; });
     });
     var pct = totalAll ? Math.round(100 * doneAll / totalAll) : 0;
     info.textContent = "Row " + s.rows + ", stitch " + s.stitches + ". Overall " + doneAll + " of " + totalAll + " stitches (" + pct + "%)." +
@@ -924,6 +940,8 @@ textarea.short{min-height:90px}
       d.className = "dot"; d.style.background = cols[i].hex;
       item.appendChild(d); item.appendChild(document.createTextNode(cols[i].name.trim())); leg.appendChild(item);
     });
+    var mname = { b: "bobble", s: "spike", L: "loop stitch", p: "popcorn" };
+    Object.keys(usedM).forEach(function(m){ var it = document.createElement("span"); it.textContent = m + " = " + mname[m]; leg.appendChild(it); });
     var labelW = 28, gap = 1, avail = Math.max(120, wrap.clientWidth - 16 - 2 * labelW);
     var fit = Math.max(3, Math.min(26, Math.floor(avail / maxLen) - gap));
     var cs = chartZoom === 0 ? fit : [fit, 12, 20][chartZoom];
@@ -949,6 +967,7 @@ textarea.short{min-height:90px}
           curX = x; g.globalAlpha = 1; g.fillStyle = hex; g.fillRect(x, y, cs, cs);
           g.lineWidth = 2; g.strokeStyle = ink; g.strokeRect(x - 0.5, y - 0.5, cs + 1, cs + 1);
         }
+        if (r.marks && r.marks[k] && cs >= 9) drawMark(g, r.marks[k], x, y, cs, hex, (done || (isCur && k === s.stitches)) ? 1 : 0.28);
       });
       g.globalAlpha = 1;
       if (cs >= 11 || r.n % 5 === 0 || isCur) {
